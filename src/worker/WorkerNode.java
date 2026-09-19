@@ -62,9 +62,34 @@ public class WorkerNode extends UnicastRemoteObject implements WorkerService {
      */
     @Override
     public JobResult executeJob(JobTask task) throws RemoteException {
-        // Method stub: submit JobRunner to computationThreadPool and return JobResult
-        return null;
+        if (task == null) {
+            JobResult err = new JobResult();
+            err.setSuccess(false);
+            err.setErrorMessage("Received null JobTask");
+            return err;
+        }
+
+        try {
+            java.util.concurrent.Future<JobResult> future = computationThreadPool.submit(new JobRunner(task));
+            return future.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            JobResult err = new JobResult();
+            err.setJobId(task.getJobId());
+            err.setTaskId(task.getTaskId());
+            err.setSuccess(false);
+            err.setErrorMessage("Task interrupted: " + e.getMessage());
+            return err;
+        } catch (java.util.concurrent.ExecutionException e) {
+            JobResult err = new JobResult();
+            err.setJobId(task.getJobId());
+            err.setTaskId(task.getTaskId());
+            err.setSuccess(false);
+            err.setErrorMessage("Execution error: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
+            return err;
+        }
     }
+
 
     /**
      * Receives and handles election flooding messages with duplicate suppression.
