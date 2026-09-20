@@ -120,16 +120,28 @@ public class WorkerNode extends UnicastRemoteObject implements WorkerService {
      * Transitions this worker into the coordinator role.
      * Serves for exactly one term (up to 5 job assignments).
      */
-    public void transitionToCoordinator() {
-        // Method stub: initialize CoordinatorManager passing current JAC, bind coordinator RMI service, and broadcast COORDINATOR message
+    public synchronized void transitionToCoordinator() {
+        try {
+            isCoordinator = true;
+            coordinatorManager = new CoordinatorManager(jac.get());
+            // Add self as an available compute worker in the coordinator pool
+            coordinatorManager.addWorker(this);
+        } catch (RemoteException e) {
+            System.err.println("Failed to transition to coordinator: " + e.getMessage());
+        }
     }
 
     /**
      * Steps down from coordinator role back to regular worker mode when term expires (after 5 jobs).
      */
-    public void stepDownToWorker() {
-        // Method stub: unbind coordinator service, update persistent JAC, and trigger new election
+    public synchronized void stepDownToWorker() {
+        if (coordinatorManager != null) {
+            jac.set(coordinatorManager.getPersistentJac());
+            coordinatorManager = null;
+        }
+        isCoordinator = false;
     }
+
 
     public String getLeaderman() {
         return leaderman;
