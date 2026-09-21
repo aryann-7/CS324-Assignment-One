@@ -3,10 +3,12 @@ package bootstrap;
 import common.interfaces.BootstrapService;
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 
 //Implementation of the BootstrapService remote interface.
 //Tracks active worker registries and connects joining workers randomly to an active worker.
@@ -55,8 +57,23 @@ public class BootstrapServiceImpl extends UnicastRemoteObject implements Bootstr
 
     @Override
     public List<String> getInitialNeighbors(int workerId) throws RemoteException {
-        // Method stub: select an active worker randomly and return as neighbor
-        return Collections.emptyList();
+        if (!registeredWorkers.containsKey(workerId)) {
+            throw new RemoteException("Worker ID " + workerId + " is not registered");
+        }
+
+        List<String> candidates = new ArrayList<>();
+        for (Map.Entry<Integer, String> worker : registeredWorkers.entrySet()) {
+            if (worker.getKey() != workerId) {
+                candidates.add(worker.getValue());
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        int index = ThreadLocalRandom.current().nextInt(candidates.size());
+        return Collections.singletonList(candidates.get(index));
     }
 
     // Deregisters or removes a worker node upon shutdown or failure.
