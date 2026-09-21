@@ -28,7 +28,27 @@ public class BootstrapServiceImpl extends UnicastRemoteObject implements Bootstr
 
     @Override
     public void registerWorker(int workerId, String host, int port) throws RemoteException {
-        // Method stub: record worker information in active registry
+        if (workerId <= 0) {
+            throw new RemoteException("Worker ID must be greater than 0: " + workerId);
+        }
+
+        if (host == null || host.trim().isEmpty()) {
+            throw new RemoteException("Worker host cannot be empty");
+        }
+
+        if (port <= 0 || port > 65535) {
+            throw new RemoteException("Invalid worker port: " + port);
+        }
+
+        String workerEndpoint = host + ":" + port;
+
+        String existingWorker = registeredWorkers.putIfAbsent(workerId, workerEndpoint);
+
+        if (existingWorker != null) {
+            throw new RemoteException("Worker ID " + workerId + " is already registered");
+        }
+
+        System.out.println("Worker " + workerId + " registered at " + workerEndpoint);
     }
 
     // Connects joining worker randomly to an active worker.
