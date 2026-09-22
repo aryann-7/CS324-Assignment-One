@@ -80,6 +80,11 @@ public class BootstrapServiceImpl extends UnicastRemoteObject implements Bootstr
 
     @Override
     public void deregisterWorker(int workerId) throws RemoteException {
-        // Method stub: remove worker from registry map
+        String workerEndpoint = registeredWorkers.remove(workerId);
+        if (workerEndpoint != null) {
+            System.out.println("Worker " + workerId + " deregistered from " + workerEndpoint);
+        } else {
+            System.out.println("Worker " + workerId + " is not registered");
+        }
     }
 }
