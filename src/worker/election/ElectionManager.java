@@ -2,79 +2,117 @@ package worker.election;
 
 import common.models.ElectionMessage;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Manages flooding-based election state and duplicate message suppression.
+ * Handles leader-election message creation and duplicate prevention.
  *
- * Election criteria:
- * 1. Elect active worker with lowest Job Allocation Counter (JAC).
- * 2. Tie-breaker: Highest worker ID (integer).
+ * Election rules:
+ * 1. Lowest JAC wins.
+ * 2. If JAC is equal, highest worker ID wins.
  */
 public class ElectionManager {
 
-    /**
-     * Set of seen message IDs to prevent loops and duplicate processing across the unstructured graph.
+    /*
+     * Stores election message IDs that have already been processed.
+     *
+     * ConcurrentHashMap is used because RMI calls can arrive
+     * from multiple workers at the same time.
      */
-    private final Set<String> seenMessageIds = ConcurrentHashMap.newKeySet();
+    private final Set<String> seenMessageIds =
+            ConcurrentHashMap.newKeySet();
 
     /**
-     * Checks if an election/coordinator message has already been processed, and marks it as seen if not.
-     * Ensures a worker never processes the same election message twice.
+     * Checks whether a message was already processed.
      *
-     * @param messageId Unique message identifier.
-     * @return true if duplicate (already seen), false otherwise.
+     * @return true if the message is a duplicate.
      */
     public boolean isDuplicateAndMark(String messageId) {
-        // Method stub: check if seenMessageIds contains messageId; if not, add and return false
-        return false;
+
+        // add() returns false if the ID already exists
+        return !seenMessageIds.add(messageId);
     }
 
     /**
-     * Initiates an election round by creating an ELECTION flooding message with this worker as candidate.
-     *
-     * @param candidateId Integer ID of this worker node.
-     * @param jac Current Job Allocation Counter of this worker.
-     * @param term Current cluster term.
-     * @return ElectionMessage to propagate across neighbor connections.
+     * Creates a new ELECTION message.
      */
-    public ElectionMessage initiateElection(int candidateId, int jac, int term) {
-        // Method stub: construct initial ELECTION message with local candidateId and jac
-        return null;
+    public ElectionMessage initiateElection(
+            int candidateId,
+            int jac,
+            int term) {
+
+        // Generate a unique ID for this election
+        String messageId = UUID.randomUUID().toString();
+
+        return new ElectionMessage(
+                messageId,
+                ElectionMessage.MessageType.ELECTION,
+                candidateId,
+                jac,
+                term,
+                candidateId
+        );
     }
 
     /**
-     * Evaluates an incoming election message against local node state.
-     * Compares candidate JAC with local JAC (lower wins); ties broken by higher worker ID.
+     * Compares the candidate in the message with the local worker.
      *
-     * @param message Incoming election message.
-     * @param localId Local worker integer ID.
-     * @param localJac Local worker JAC.
-     * @return The winning ElectionMessage payload to continue flooding to neighbors.
+     * Lower JAC wins.
+     * If JAC is equal, higher worker ID wins.
      */
-    public ElectionMessage processElectionMessage(ElectionMessage message, int localId, int localJac) {
-        // Method stub: compare (candidateJac, candidateId) with (localJac, localId) and decide forwarded payload
-        return null;
+    public ElectionMessage processElectionMessage(
+            ElectionMessage message,
+            int localId,
+            int localJac) {
+
+        boolean localWorkerWins = false;
+
+        // Lower JAC is preferred
+        if (localJac < message.getCandidateJac()) {
+            localWorkerWins = true;
+        }
+
+        // If JAC is equal, higher worker ID wins
+        else if (localJac == message.getCandidateJac()
+                && localId > message.getCandidateId()) {
+
+            localWorkerWins = true;
+        }
+
+        if (localWorkerWins) {
+
+            message.setCandidateId(localId);
+            message.setCandidateJac(localJac);
+        }
+
+        return message;
     }
 
     /**
-     * Creates a COORDINATOR announcement message once elected to notify all reachable workers.
-     *
-     * @param electedCoordinatorId Worker ID of the elected leader.
-     * @param coordinatorJac JAC of the elected coordinator.
-     * @param term New term number.
-     * @return ElectionMessage of type COORDINATOR.
+     * Creates a COORDINATOR announcement.
      */
-    public ElectionMessage createCoordinatorAnnouncement(int electedCoordinatorId, int coordinatorJac, int term) {
-        // Method stub: build COORDINATOR announcement message
-        return null;
+    public ElectionMessage createCoordinatorAnnouncement(
+            int electedCoordinatorId,
+            int coordinatorJac,
+            int term) {
+
+        return new ElectionMessage(
+                UUID.randomUUID().toString(),
+                ElectionMessage.MessageType.COORDINATOR,
+                electedCoordinatorId,
+                coordinatorJac,
+                term,
+                electedCoordinatorId
+        );
     }
 
     /**
-     * Resets election state upon new coordinator election or term transition.
+     * Clears old election information.
      */
     public void resetElectionState() {
-        // Method stub: clear transient election counters and reset seen message cache if appropriate
+
+        // Old message IDs are cleared when starting a new term.
+        seenMessageIds.clear();
     }
 }
-

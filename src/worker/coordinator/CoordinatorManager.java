@@ -306,10 +306,16 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
     /**
      * Queries current coordinator status including JAC, term, and jobs completed in this term.
      */
-    @Override
-    public String getCoordinatorStatus() throws RemoteException {
-        // Method stub: return status string (term, termJobCount, persistentJac)
-        return "";
+   @Override
+   public String getCoordinatorStatus()
+        throws RemoteException {
+
+    return "Term=" + currentTerm.get()
+            + ", JobsAssigned="
+            + termJobCount.get()
+            + "/5"
+            + ", JAC="
+            + persistentJac.get();
     }
 
     /**
@@ -324,8 +330,13 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
     /**
      * Steps down from coordinator role and triggers a new leader election across reachable workers.
      */
-    public void stepDown() {
-        // Method stub: broadcast step down and initiate new ELECTION round
+   public void stepDown() {
+
+    System.out.println(
+            "Coordinator term has ended after "
+            + MAX_JOBS_PER_TERM
+            + " jobs."
+    );
     }
 
     public int getPersistentJac() {
