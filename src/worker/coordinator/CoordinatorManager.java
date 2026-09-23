@@ -158,6 +158,7 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
 
         if (isTermExpired()) {
             stepDown();
+            notifyTermExpired();
         }
 
         return finalResult;
