@@ -606,22 +606,59 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
+    @Override
+    public void addNeighbour(int neighbourId, WorkerService neighbour)
+            throws RemoteException {
+
+        if (neighbourId <= 0) {
+            throw new RemoteException("Neighbour ID must be greater than 0: " + neighbourId);
+        }
+        if (neighbourId == workerId) {
+            throw new RemoteException("A worker cannot add itself as a neighbour");
+        }
+        if (neighbour == null) {
+            throw new RemoteException("Neighbour reference cannot be null");
+        }
+
+        neighbours.putIfAbsent(neighbourId, neighbour);
+    }
+
     private void addNeighbourFromEndpoint(
             String endpoint) {
 
         try {
 
+            if (endpoint == null) {
+                throw new RemoteException("Neighbour descriptor cannot be null");
+            }
+
             String[] parts =
-                    endpoint.split("\\|");
+                    endpoint.split("\\|", -1);
+
+            if (parts.length != 3) {
+                throw new RemoteException("Expected neighbour descriptor workerId|host|port");
+            }
 
             int id =
                     Integer.parseInt(parts[0]);
 
+            if (id <= 0 || id == workerId) {
+                throw new RemoteException("Invalid discovered neighbour ID: " + id);
+            }
+
             String workerHost =
                     parts[1];
 
+            if (workerHost.isBlank()) {
+                throw new RemoteException("Neighbour host cannot be blank");
+            }
+
             int workerPort =
                     Integer.parseInt(parts[2]);
+
+            if (workerPort <= 0 || workerPort > 65535) {
+                throw new RemoteException("Invalid neighbour port: " + workerPort);
+            }
 
             Registry registry =
                     LocateRegistry.getRegistry(
@@ -632,19 +669,21 @@ public class WorkerNode extends UnicastRemoteObject
                     (WorkerService) registry.lookup(
                             "Worker-" + id);
 
-            neighbours.put(
+            worker.addNeighbour(workerId, this);
+
+            addNeighbour(
                     id,
                     worker);
 
             System.out.println(
                     "Worker " + workerId +
-                    " connected to Worker " +
+                    " established bidirectional connection with Worker " +
                     id);
 
         } catch (Exception e) {
 
             System.err.println(
-                    "Could not connect to neighbour " +
+                    "Bidirectional neighbour setup failed for " +
                     endpoint + ": " +
                     e.getMessage());
         }
