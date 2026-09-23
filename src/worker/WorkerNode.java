@@ -6,14 +6,11 @@ import common.models.ElectionMessage;
 import common.models.ElectionReply;
 import common.models.JobResult;
 import common.models.JobTask;
-
 import java.rmi.Naming;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
-
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -21,7 +18,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import worker.computation.JobRunner;
 import worker.coordinator.CoordinatorManager;
 import worker.election.ElectionManager;
@@ -274,6 +270,19 @@ public class WorkerNode extends UnicastRemoteObject
         }
 
         /*
+         * Election messages must have a valid unique ID.
+         */
+        if (message.getMessageId() == null
+                || message.getMessageId().isBlank()) {
+
+            System.out.println(
+                    "Worker " + workerId +
+                    " rejected election message with no ID.");
+
+            return;
+        }
+
+        /*
          * Prevent duplicate processing.
          */
         if (electionManager.isDuplicateAndMark(
@@ -346,6 +355,17 @@ public class WorkerNode extends UnicastRemoteObject
                 children.add(neighbourId);
             }
         }
+
+        /*
+         * Show that the election is being propagated.
+         */
+        System.out.println(
+                "Worker " + workerId +
+                " forwarding ELECTION " +
+                message.getMessageId() +
+                " to " +
+                children.size() +
+                " neighbour(s).");
 
         pendingReplies.put(
                 message.getMessageId(),
@@ -624,6 +644,7 @@ public class WorkerNode extends UnicastRemoteObject
                     " has become the COORDINATOR.");
 
             transitionToCoordinator();
+
         } else {
 
             /*
@@ -874,6 +895,20 @@ public class WorkerNode extends UnicastRemoteObject
 
     public boolean isCoordinator() {
         return isCoordinator;
+    }
+
+    /**
+     * Returns the current coordinator ID.
+     */
+    public int getCoordinatorId() {
+        return coordinatorId;
+    }
+
+    /**
+     * Returns the current election term.
+     */
+    public int getCurrentTerm() {
+        return currentTerm.get();
     }
 
     /**
