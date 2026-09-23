@@ -377,7 +377,8 @@ public class WorkerNode extends UnicastRemoteObject
 
     private void checkElectionFinished(
             ElectionMessage message) {
-                        Set<Integer> pending =
+
+        Set<Integer> pending =
                 pendingReplies.get(
                         message.getMessageId());
 
@@ -674,11 +675,14 @@ public class WorkerNode extends UnicastRemoteObject
                         worker);
             }
 
+            LocateRegistry.getRegistry(port)
+                    .rebind("Coordinator", coordinatorManager);
+
             System.out.println(
                     "Worker " + workerId +
                     " is now coordinator.");
 
-        } catch (RemoteException e) {
+        } catch (Exception e) {
 
             System.err.println(
                     "Failed to become coordinator: " +
@@ -693,6 +697,18 @@ public class WorkerNode extends UnicastRemoteObject
             jac.set(
                     coordinatorManager
                             .getPersistentJac());
+
+            try {
+
+                LocateRegistry.getRegistry(port)
+                        .unbind("Coordinator");
+
+            } catch (Exception e) {
+
+                System.out.println(
+                        "Coordinator binding already removed: " +
+                        e.getMessage());
+            }
 
             coordinatorManager = null;
         }
