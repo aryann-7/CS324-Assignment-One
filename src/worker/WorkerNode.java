@@ -22,99 +22,45 @@ import worker.computation.JobRunner;
 import worker.coordinator.CoordinatorManager;
 import worker.election.ElectionManager;
 
-/**
- * Main Worker Node.
- *
- * Each worker:
- * - Has a unique integer ID.
- * - Maintains a JAC.
- * - Communicates using Java RMI.
- * - Participates in leader elections.
- * - Propagates COORDINATOR messages.
- * - Can become the coordinator.
- */
 public class WorkerNode extends UnicastRemoteObject
         implements WorkerService {
 
     private static final long serialVersionUID = 1L;
 
-    /**
-     * Required assignment variable.
-     */
     private final String leaderman = "cs324";
 
-    /**
-     * Unique worker ID.
-     */
     private final int workerId;
 
     private final String host;
     private final int port;
 
-    /**
-     * Current coordinator ID.
-     */
     private volatile int coordinatorId = -1;
 
-    /**
-     * Current election term.
-     */
     private final AtomicInteger currentTerm =
             new AtomicInteger(1);
 
-    /**
-     * JAC is persistent between terms.
-     */
     private final AtomicInteger jac =
             new AtomicInteger(0);
 
-    /**
-     * Whether this worker is coordinator.
-     */
     private volatile boolean isCoordinator = false;
 
-    /**
-     * Handles election logic.
-     */
     private final ElectionManager electionManager =
             new ElectionManager();
 
-    /**
-     * Coordinator manager created only when this worker
-     * becomes coordinator.
-     */
     private CoordinatorManager coordinatorManager;
 
-    /**
-     * Remote neighbour workers.
-     *
-     * Map:
-     * worker ID -> RMI remote object
-     */
     private final Map<Integer, WorkerService> neighbours =
             new ConcurrentHashMap<>();
 
-    /**
-     * Used for concurrent computation.
-     */
     private final ExecutorService computationThreadPool =
             Executors.newFixedThreadPool(4);
 
-    /**
-     * Stores the parent worker for each election.
-     */
     private final Map<String, Integer> electionParents =
             new ConcurrentHashMap<>();
 
-    /**
-     * Stores workers that are expected to return an election result.
-     */
     private final Map<String, Set<Integer>> pendingReplies =
             new ConcurrentHashMap<>();
 
-    /**
-     * Stores the current best candidate for each election.
-     */
     private final Map<String, ElectionCandidate> bestCandidates =
             new ConcurrentHashMap<>();
 
@@ -130,9 +76,6 @@ public class WorkerNode extends UnicastRemoteObject
         this.port = port;
     }
 
-    /**
-     * Executes a job using a worker thread.
-     */
     @Override
     public JobResult executeJob(JobTask task)
             throws RemoteException {
@@ -184,9 +127,6 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
-    /**
-     * Starts a new leader election.
-     */
     public void startElection() {
 
         int newTerm =
@@ -217,7 +157,6 @@ public class WorkerNode extends UnicastRemoteObject
                         jac.get(),
                         newTerm);
 
-        // Mark our own election message as processed.
         electionManager.isDuplicateAndMark(
                 message.getMessageId());
 
@@ -241,7 +180,6 @@ public class WorkerNode extends UnicastRemoteObject
                 message.getMessageId(),
                 children);
 
-        // Send the election to every neighbour.
         for (Map.Entry<Integer, WorkerService> entry
                 : neighbours.entrySet()) {
 
@@ -252,14 +190,9 @@ public class WorkerNode extends UnicastRemoteObject
                     message);
         }
 
-        // If this is the only active worker,
-        // it becomes coordinator.
         checkElectionFinished(message);
     }
 
-    /**
-     * Receives ELECTION or COORDINATOR messages.
-     */
     @Override
     public void receiveElectionMessage(
             ElectionMessage message)
@@ -269,9 +202,6 @@ public class WorkerNode extends UnicastRemoteObject
             return;
         }
 
-        /*
-         * Election messages must have a valid unique ID.
-         */
         if (message.getMessageId() == null
                 || message.getMessageId().isBlank()) {
 
@@ -282,9 +212,6 @@ public class WorkerNode extends UnicastRemoteObject
             return;
         }
 
-        /*
-         * Prevent duplicate processing.
-         */
         if (electionManager.isDuplicateAndMark(
                 message.getMessageId())) {
 
@@ -298,9 +225,6 @@ public class WorkerNode extends UnicastRemoteObject
             return;
         }
 
-        /*
-         * COORDINATOR message.
-         */
         if (message.getType()
                 == ElectionMessage.MessageType.COORDINATOR) {
 
@@ -308,27 +232,17 @@ public class WorkerNode extends UnicastRemoteObject
             return;
         }
 
-        /*
-         * Normal ELECTION message.
-         */
         System.out.println(
                 "Worker " + workerId +
                 " received ELECTION " +
                 message.getMessageId());
 
-        /*
-         * Remember the worker that sent this message.
-         */
         int parentId = message.getSenderId();
 
         electionParents.put(
                 message.getMessageId(),
                 parentId);
 
-        /*
-         * Compare the election candidate with this
-         * worker's own JAC and ID.
-         */
         ElectionMessage updated =
                 electionManager.processElectionMessage(
                         message,
@@ -341,9 +255,6 @@ public class WorkerNode extends UnicastRemoteObject
                         updated.getCandidateId(),
                         updated.getCandidateJac()));
 
-        /*
-         * Find all neighbours except our parent.
-         */
         Set<Integer> children =
                 ConcurrentHashMap.newKeySet();
 
@@ -356,9 +267,6 @@ public class WorkerNode extends UnicastRemoteObject
             }
         }
 
-        /*
-         * Show that the election is being propagated.
-         */
         System.out.println(
                 "Worker " + workerId +
                 " forwarding ELECTION " +
@@ -371,9 +279,6 @@ public class WorkerNode extends UnicastRemoteObject
                 message.getMessageId(),
                 children);
 
-        /*
-         * Forward the election.
-         */
         for (Integer neighbourId : children) {
 
             WorkerService neighbour =
@@ -387,24 +292,13 @@ public class WorkerNode extends UnicastRemoteObject
             }
         }
 
-        /*
-         * If there are no children, immediately
-         * return our candidate to the parent.
-         */
         checkElectionFinished(updated);
     }
 
-    /**
-     * Sends an election message to another worker.
-     */
     private void sendElection(
             WorkerService worker,
             ElectionMessage message) {
 
-        /*
-         * Create a copy so the sender ID represents
-         * the current worker.
-         */
         ElectionMessage forwarded =
                 new ElectionMessage(
                         message.getMessageId(),
@@ -428,9 +322,6 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
-    /**
-     * Receives an election result from a child worker.
-     */
     @Override
     public void receiveElectionReply(
             ElectionReply reply)
@@ -484,13 +375,9 @@ public class WorkerNode extends UnicastRemoteObject
         checkElectionFinished(message);
     }
 
-    /**
-     * Checks whether all child workers have replied.
-     */
     private void checkElectionFinished(
             ElectionMessage message) {
-
-        Set<Integer> pending =
+                        Set<Integer> pending =
                 pendingReplies.get(
                         message.getMessageId());
 
@@ -512,9 +399,6 @@ public class WorkerNode extends UnicastRemoteObject
                 electionParents.get(
                         message.getMessageId());
 
-        /*
-         * Root worker has no parent.
-         */
         if (parent == null || parent == -1) {
 
             System.out.println();
@@ -564,12 +448,6 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
-    /**
-     * Compares two election candidates.
-     *
-     * Lower JAC wins.
-     * Highest ID wins when JAC is equal.
-     */
     private boolean isBetterCandidate(
             ElectionCandidate first,
             ElectionCandidate second) {
@@ -587,9 +465,6 @@ public class WorkerNode extends UnicastRemoteObject
         return false;
     }
 
-    /**
-     * Announces the selected coordinator.
-     */
     private void announceCoordinator(
             int coordinator,
             int coordinatorJac,
@@ -601,15 +476,11 @@ public class WorkerNode extends UnicastRemoteObject
                         coordinatorJac,
                         term);
 
-        // Mark our own coordinator message.
         electionManager.isDuplicateAndMark(
                 message.getMessageId());
 
         receiveCoordinatorMessage(message);
 
-        /*
-         * Propagate the COORDINATOR message.
-         */
         for (Map.Entry<Integer, WorkerService> entry
                 : neighbours.entrySet()) {
 
@@ -619,9 +490,6 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
-    /**
-     * Processes a COORDINATOR message.
-     */
     private void receiveCoordinatorMessage(
             ElectionMessage message) {
 
@@ -647,19 +515,12 @@ public class WorkerNode extends UnicastRemoteObject
 
         } else {
 
-            /*
-             * If this worker was previously coordinator,
-             * step down.
-             */
             if (coordinatorManager != null) {
 
                 stepDownToWorker();
             }
         }
 
-        /*
-         * Forward the coordinator announcement.
-         */
         for (Map.Entry<Integer, WorkerService> entry
                 : neighbours.entrySet()) {
 
@@ -675,9 +536,6 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
-    /**
-     * Sends a coordinator message to a neighbour.
-     */
     private void sendCoordinator(
             WorkerService worker,
             ElectionMessage message) {
@@ -704,9 +562,6 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
-    /**
-     * Connects this worker to the Bootstrap Node.
-     */
     public void connectToBootstrap(
             String bootstrapHost,
             int bootstrapPort) {
@@ -721,17 +576,11 @@ public class WorkerNode extends UnicastRemoteObject
                             bootstrapPort +
                             "/BootstrapService");
 
-            /*
-             * Register this worker first.
-             */
             bootstrap.registerWorker(
                     workerId,
                     host,
                     port);
 
-            /*
-             * Ask Bootstrap for an initial neighbour.
-             */
             List<String> endpoints =
                     bootstrap.getInitialNeighbors(
                             workerId);
@@ -757,12 +606,6 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
-    /**
-     * Converts a Bootstrap endpoint into an RMI worker stub.
-     *
-     * Endpoint format:
-     * workerId|host|port
-     */
     private void addNeighbourFromEndpoint(
             String endpoint) {
 
@@ -807,9 +650,6 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
-    /**
-     * Makes this worker the coordinator.
-     */
     public synchronized void transitionToCoordinator() {
 
         if (coordinatorManager != null) {
@@ -824,10 +664,9 @@ public class WorkerNode extends UnicastRemoteObject
                     new CoordinatorManager(
                             jac.get());
 
-            /*
-             * Add other workers to the coordinator's
-             * computation pool.
-             */
+            coordinatorManager.setTermExpiredListener(
+                    this::stepDownToWorker);
+
             for (WorkerService worker :
                     neighbours.values()) {
 
@@ -847,9 +686,6 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
-    /**
-     * Steps down and starts a new election.
-     */
     public synchronized void stepDownToWorker() {
 
         if (coordinatorManager != null) {
@@ -867,15 +703,9 @@ public class WorkerNode extends UnicastRemoteObject
                 "Worker " + workerId +
                 " stepped down from coordinator.");
 
-        /*
-         * Start a new term.
-         */
         startElection();
     }
 
-    /**
-     * Ping used for liveness checking.
-     */
     @Override
     public boolean ping() {
         return true;
@@ -897,23 +727,14 @@ public class WorkerNode extends UnicastRemoteObject
         return isCoordinator;
     }
 
-    /**
-     * Returns the current coordinator ID.
-     */
     public int getCoordinatorId() {
         return coordinatorId;
     }
 
-    /**
-     * Returns the current election term.
-     */
     public int getCurrentTerm() {
         return currentTerm.get();
     }
 
-    /**
-     * Small candidate class.
-     */
     private static class ElectionCandidate {
 
         private final int workerId;
