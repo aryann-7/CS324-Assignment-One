@@ -73,6 +73,7 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
             finalResult.setSuccess(false);
             finalResult.setErrorMessage("Coordinator term expired (5 jobs limit reached). Election required.");
             stepDown();
+            notifyTermExpired();
             return finalResult;
         }
 
@@ -157,6 +158,7 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
 
         if (isTermExpired()) {
             stepDown();
+            notifyTermExpired();
         }
 
         return finalResult;
