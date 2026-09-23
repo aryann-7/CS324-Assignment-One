@@ -8,35 +8,16 @@ import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * Handles coordinator duties when a worker transitions into coordinator mode.
- *
- * Term limit & JAC rules:
- * - Coordinator serves for exactly one term (up to 5 job assignments).
- * - Job Allocation Counter (JAC): Each worker maintains a JAC. The counter is incremented
- *   each time that worker, while acting as the coordinator, assigns a job to another worker.
- * - Coordinator divides and distributes computational workload as evenly as possible among available workers.
- * - After 5 job assignments have been assigned, the term ends, and a new leader election must take place.
- */
 public class CoordinatorManager extends UnicastRemoteObject implements CoordinatorService {
 
     private static final long serialVersionUID = 1L;
 
     public static final int MAX_JOBS_PER_TERM = 5;
 
-    /**
-     * Term job counter (0 to 5) tracking jobs completed in this coordinator term.
-     */
     private final AtomicInteger termJobCount = new AtomicInteger(0);
 
-    /**
-     * Persistent Job Allocation Counter (JAC) for the hosting worker node.
-     */
     private final AtomicInteger persistentJac;
 
-    /**
-     * Current leadership term sequence number.
-     */
     private final AtomicInteger currentTerm = new AtomicInteger(1);
 
     public CoordinatorManager(int initialJac) throws RemoteException {
@@ -44,44 +25,30 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
         this.persistentJac = new AtomicInteger(initialJac);
     }
 
-    /**
-     * Set of active workers (or endpoints / remote stubs) available in the cluster.
-     */
+    private Runnable termExpiredListener;
+
+    public void setTermExpiredListener(Runnable listener) {
+        this.termExpiredListener = listener;
+    }
+
     private final java.util.List<common.interfaces.WorkerService> activeWorkers = new java.util.concurrent.CopyOnWriteArrayList<>();
 
-    /**
-     * Dedicated thread pool for dispatching partitioned sub-tasks concurrently to workers.
-     */
     private final java.util.concurrent.ExecutorService dispatchPool = java.util.concurrent.Executors.newCachedThreadPool();
 
-    /**
-     * Adds an active worker service reference to the coordinator's worker pool.
-     */
     public void addWorker(common.interfaces.WorkerService worker) {
         if (worker != null && !activeWorkers.contains(worker)) {
             activeWorkers.add(worker);
         }
     }
 
-    /**
-     * Removes an active worker reference (e.g., if unresponsive).
-     */
     public void removeWorker(common.interfaces.WorkerService worker) {
         activeWorkers.remove(worker);
     }
 
-    /**
-     * Returns the list of currently active workers.
-     */
     public java.util.List<common.interfaces.WorkerService> getActiveWorkers() {
         return activeWorkers;
     }
 
-    /**
-     * Submits a batch computation job from client(s).
-     * Splits the workload evenly across available active workers,
-     * aggregates partial results, and increments JAC on this coordinator.
-     */
     @Override
     public synchronized JobResult submitJob(JobRequest request) throws RemoteException {
         long startTime = System.currentTimeMillis();
@@ -96,7 +63,6 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
 
         finalResult.setJobId(request.getJobId());
 
-        // 1. Verify term limit
         if (isTermExpired()) {
             finalResult.setSuccess(false);
             finalResult.setErrorMessage("Coordinator term expired (5 jobs limit reached). Election required.");
@@ -104,7 +70,6 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
             return finalResult;
         }
 
-        // 2. Verify active worker availability
         if (activeWorkers.isEmpty()) {
             finalResult.setSuccess(false);
             finalResult.setErrorMessage("No active workers available in cluster to process job");
@@ -114,7 +79,6 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
         int numWorkers = activeWorkers.size();
         java.util.List<common.models.JobTask> tasks = new java.util.ArrayList<>();
 
-        // 3. Partition workload evenly across active workers
         switch (request.getJobType()) {
             case MAX:
             case PRIMECOUNT:
@@ -137,7 +101,6 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
                 return finalResult;
         }
 
-        // 4. Dispatch tasks concurrently to workers using Java threads
         java.util.List<java.util.concurrent.Future<JobResult>> futures = new java.util.ArrayList<>();
         int workersAssignedCount = 0;
 
@@ -160,7 +123,6 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
             }));
         }
 
-        // 5. Aggregate worker results into final JobResult
         java.util.List<JobResult> subResults = new java.util.ArrayList<>();
         for (java.util.concurrent.Future<JobResult> future : futures) {
             try {
@@ -180,7 +142,6 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
 
         aggregateResults(request.getJobType(), subResults, finalResult);
 
-        // 6. Increment JAC (each time coordinator assigns a job to another worker) and increment term counter
         if (workersAssignedCount > 0) {
             persistentJac.incrementAndGet();
         }
@@ -188,7 +149,6 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
 
         finalResult.setExecutionTimeMs(System.currentTimeMillis() - startTime);
 
-        // 7. Check if term limit has been reached
         if (isTermExpired()) {
             stepDown();
         }
@@ -196,9 +156,6 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
         return finalResult;
     }
 
-    /**
-     * Splits a list of numbers as evenly as possible into N chunks.
-     */
     private java.util.List<java.util.List<Long>> partitionList(java.util.List<Long> numbers, int numChunks) {
         java.util.List<java.util.List<Long>> partitions = new java.util.ArrayList<>();
         if (numbers == null || numbers.isEmpty() || numChunks <= 0) {
@@ -220,9 +177,6 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
         return partitions;
     }
 
-    /**
-     * Splits a numerical range [start, end] as evenly as possible across N workers.
-     */
     private java.util.List<long[]> partitionRange(long start, long end, int numWorkers) {
         java.util.List<long[]> ranges = new java.util.ArrayList<>();
         if (start > end) {
@@ -246,9 +200,6 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
         return ranges;
     }
 
-    /**
-     * Aggregates partial sub-task results into a single consolidated result.
-     */
     private void aggregateResults(common.models.JobType jobType, java.util.List<JobResult> subResults, JobResult finalResult) {
         if (subResults.isEmpty()) {
             finalResult.setSuccess(false);
@@ -294,18 +245,11 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
         }
     }
 
-
-    /**
-     * Receives heartbeat or coordinator management messages from cluster nodes.
-     */
     @Override
     public void handleCoordinatorMessage(CoordinatorMessage message) throws RemoteException {
-        // Method stub: handle coordination message
+
     }
 
-    /**
-     * Queries current coordinator status including JAC, term, and jobs completed in this term.
-     */
    @Override
    public String getCoordinatorStatus()
         throws RemoteException {
@@ -318,18 +262,10 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
             + persistentJac.get();
     }
 
-    /**
-     * Checks if the coordinator has reached its maximum jobs for the current term (5 jobs).
-     *
-     * @return true if termJobCount >= MAX_JOBS_PER_TERM.
-     */
     public boolean isTermExpired() {
         return termJobCount.get() >= MAX_JOBS_PER_TERM;
     }
 
-    /**
-     * Steps down from coordinator role and triggers a new leader election across reachable workers.
-     */
    public void stepDown() {
 
     System.out.println(
@@ -343,4 +279,3 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
         return persistentJac.get();
     }
 }
-
