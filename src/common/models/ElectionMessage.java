@@ -3,12 +3,17 @@ package common.models;
 import java.io.Serializable;
 
 /**
- * Data Transfer Object representing an election flooding message.
- * Propagates across the unstructured graph.
- * Election criteria: Elect active worker with lowest Job Allocation Counter (JAC).
- * Tie-breaker: Highest worker ID (integer).
+ * Message used for both ELECTION and COORDINATOR flooding.
+ *
+ * ELECTION:
+ * Workers use this message to find the worker with the
+ * lowest JAC. Highest worker ID breaks a tie.
+ *
+ * COORDINATOR:
+ * The elected worker is announced to all reachable workers.
  */
 public class ElectionMessage implements Serializable {
+
     private static final long serialVersionUID = 1L;
 
     public enum MessageType {
@@ -18,15 +23,28 @@ public class ElectionMessage implements Serializable {
 
     private String messageId;
     private MessageType type;
+
+    // Current best candidate
     private int candidateId;
     private int candidateJac;
+
+    // Election term
     private int term;
+
+    // Worker that sent the message
     private int senderId;
 
     public ElectionMessage() {
     }
 
-    public ElectionMessage(String messageId, MessageType type, int candidateId, int candidateJac, int term, int senderId) {
+    public ElectionMessage(
+            String messageId,
+            MessageType type,
+            int candidateId,
+            int candidateJac,
+            int term,
+            int senderId) {
+
         this.messageId = messageId;
         this.type = type;
         this.candidateId = candidateId;
@@ -83,4 +101,3 @@ public class ElectionMessage implements Serializable {
         this.senderId = senderId;
     }
 }
-

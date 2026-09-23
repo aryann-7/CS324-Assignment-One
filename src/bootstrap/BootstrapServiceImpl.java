@@ -4,30 +4,41 @@ import common.interfaces.BootstrapService;
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
-//Implementation of the BootstrapService remote interface.
-//Tracks active worker registries and connects joining workers randomly to an active worker.
-//Must NOT participate in election or compute jobs.
+/**
+ * Bootstrap Node.
+ *
+ * The Bootstrap Node only helps workers join the network.
+ * It does not participate in elections or computation.
+ */
+public class BootstrapServiceImpl
+        extends UnicastRemoteObject
+        implements BootstrapService {
 
-public class BootstrapServiceImpl extends UnicastRemoteObject implements BootstrapService {
     private static final long serialVersionUID = 1L;
 
-    // Map tracking active workers: workerId (int) -> network endpoint
-    // (e.g.host:port).
+    /**
+     * Worker ID -> endpoint.
+     */
+    private final Map<Integer, String> registeredWorkers =
+            new ConcurrentHashMap<>();
 
-    private final Map<Integer, String> registeredWorkers = new ConcurrentHashMap<>();
+    private final Random random = new Random();
 
-    public BootstrapServiceImpl() throws RemoteException {
+    public BootstrapServiceImpl()
+            throws RemoteException {
+
         super();
     }
 
-    // Registers a new worker node with the bootstrap service.
-
+    /**
+     * Registers an active worker.
+     */
     @Override
     public void registerWorker(int workerId, String host, int port) throws RemoteException {
         if (workerId <= 0) {
@@ -52,8 +63,18 @@ public class BootstrapServiceImpl extends UnicastRemoteObject implements Bootstr
 
         System.out.println("Worker " + workerId + " registered at " + workerEndpoint);
     }
+    public void registerWorker(
+            int workerId,
+            String host,
+            int port)
+            throws RemoteException {
 
-    // Connects joining worker randomly to an active worker.
+        String endpoint =
+                workerId +
+                "|" +
+                host +
+                "|" +
+                port;
 
     @Override
     public List<String> getInitialNeighbors(int workerId) throws RemoteException {
@@ -74,10 +95,63 @@ public class BootstrapServiceImpl extends UnicastRemoteObject implements Bootstr
 
         int index = ThreadLocalRandom.current().nextInt(candidates.size());
         return Collections.singletonList(candidates.get(index));
+        registeredWorkers.put(
+                workerId,
+                endpoint);
+
+        System.out.println(
+                "Registered Worker " +
+                workerId +
+                " at " +
+                host +
+                ":" +
+                port);
     }
 
-    // Deregisters or removes a worker node upon shutdown or failure.
+    /**
+     * Gives a joining worker one random active neighbour.
+     */
+    @Override
+    public List<String> getInitialNeighbors(
+            int workerId)
+            throws RemoteException {
 
+        List<String> activeWorkers =
+                new ArrayList<>(
+                        registeredWorkers.values());
+
+        /*
+         * Do not connect a worker to itself.
+         */
+        activeWorkers.removeIf(
+                endpoint ->
+                        endpoint.startsWith(
+                                workerId + "|"));
+
+        List<String> result =
+                new ArrayList<>();
+
+        if (!activeWorkers.isEmpty()) {
+
+            String selected =
+                    activeWorkers.get(
+                            random.nextInt(
+                                    activeWorkers.size()));
+
+            result.add(selected);
+
+            System.out.println(
+                    "Worker " + workerId +
+                    " connected randomly to " +
+                    selected);
+        }
+
+        return result;
+    }
+
+    /**
+     * Removes a worker from the active registry.
+     */
     @Override
     public void deregisterWorker(int workerId) throws RemoteException {
         String workerEndpoint = registeredWorkers.remove(workerId);
@@ -86,5 +160,15 @@ public class BootstrapServiceImpl extends UnicastRemoteObject implements Bootstr
         } else {
             System.out.println("Worker " + workerId + " is not registered");
         }
+    public void deregisterWorker(
+            int workerId)
+            throws RemoteException {
+
+        registeredWorkers.remove(
+                workerId);
+
+        System.out.println(
+                "Worker " + workerId +
+                " deregistered.");
     }
 }
