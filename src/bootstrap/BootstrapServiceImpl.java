@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Bootstrap Node.
@@ -39,6 +40,29 @@ public class BootstrapServiceImpl
      * Registers an active worker.
      */
     @Override
+    public void registerWorker(int workerId, String host, int port) throws RemoteException {
+        if (workerId <= 0) {
+            throw new RemoteException("Worker ID must be greater than 0: " + workerId);
+        }
+
+        if (host == null || host.trim().isEmpty()) {
+            throw new RemoteException("Worker host cannot be empty");
+        }
+
+        if (port <= 0 || port > 65535) {
+            throw new RemoteException("Invalid worker port: " + port);
+        }
+
+        String workerEndpoint = host + ":" + port;
+
+        String existingWorker = registeredWorkers.putIfAbsent(workerId, workerEndpoint);
+
+        if (existingWorker != null) {
+            throw new RemoteException("Worker ID " + workerId + " is already registered");
+        }
+
+        System.out.println("Worker " + workerId + " registered at " + workerEndpoint);
+    }
     public void registerWorker(
             int workerId,
             String host,
@@ -52,6 +76,25 @@ public class BootstrapServiceImpl
                 "|" +
                 port;
 
+    @Override
+    public List<String> getInitialNeighbors(int workerId) throws RemoteException {
+        if (!registeredWorkers.containsKey(workerId)) {
+            throw new RemoteException("Worker ID " + workerId + " is not registered");
+        }
+
+        List<String> candidates = new ArrayList<>();
+        for (Map.Entry<Integer, String> worker : registeredWorkers.entrySet()) {
+            if (worker.getKey() != workerId) {
+                candidates.add(worker.getValue());
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        int index = ThreadLocalRandom.current().nextInt(candidates.size());
+        return Collections.singletonList(candidates.get(index));
         registeredWorkers.put(
                 workerId,
                 endpoint);
@@ -110,6 +153,13 @@ public class BootstrapServiceImpl
      * Removes a worker from the active registry.
      */
     @Override
+    public void deregisterWorker(int workerId) throws RemoteException {
+        String workerEndpoint = registeredWorkers.remove(workerId);
+        if (workerEndpoint != null) {
+            System.out.println("Worker " + workerId + " deregistered from " + workerEndpoint);
+        } else {
+            System.out.println("Worker " + workerId + " is not registered");
+        }
     public void deregisterWorker(
             int workerId)
             throws RemoteException {
