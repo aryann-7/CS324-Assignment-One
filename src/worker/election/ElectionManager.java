@@ -1,96 +1,120 @@
 package worker.election;
 
 import common.models.ElectionMessage;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Handles leader-election message creation and duplicate prevention.
+ * Manages flooding-based leader election state.
  *
  * Election rules:
- * 1. Lowest JAC wins.
- * 2. If JAC is equal, highest worker ID wins.
+ * - Lowest Job Allocation Counter (JAC) wins.
+ * - If JAC is equal, highest worker ID wins.
+ * - Unique message IDs prevent duplicate processing.
  */
 public class ElectionManager {
 
-    /*
-     * Stores election message IDs that have already been processed.
-     *
-     * ConcurrentHashMap is used because RMI calls can arrive
-     * from multiple workers at the same time.
+    /**
+     * Stores message IDs that have already been processed.
      */
     private final Set<String> seenMessageIds =
             ConcurrentHashMap.newKeySet();
 
     /**
-     * Checks whether a message was already processed.
+     * Stores the best election candidate known for each term.
+     */
+    private final Map<Integer, ElectionMessage> bestCandidates =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Checks whether a message has already been processed.
      *
-     * @return true if the message is a duplicate.
+     * @param messageId unique message ID
+     * @return true if the message is a duplicate
      */
     public boolean isDuplicateAndMark(String messageId) {
+        if (messageId == null || messageId.isBlank()) {
+            return false;
+        }
 
-        // add() returns false if the ID already exists
         return !seenMessageIds.add(messageId);
     }
 
     /**
-     * Creates a new ELECTION message.
+     * Creates the first ELECTION message for a new election term.
      */
     public ElectionMessage initiateElection(
             int candidateId,
             int jac,
             int term) {
 
-        // Generate a unique ID for this election
-        String messageId = UUID.randomUUID().toString();
-
-        return new ElectionMessage(
-                messageId,
+        ElectionMessage message = new ElectionMessage(
+                UUID.randomUUID().toString(),
                 ElectionMessage.MessageType.ELECTION,
                 candidateId,
                 jac,
                 term,
                 candidateId
         );
+
+        bestCandidates.put(term, message);
+
+        return message;
     }
 
     /**
-     * Compares the candidate in the message with the local worker.
+     * Compares an incoming candidate with the local worker.
      *
-     * Lower JAC wins.
-     * If JAC is equal, higher worker ID wins.
+     * Lowest JAC wins.
+     * If JAC is equal, highest worker ID wins.
      */
     public ElectionMessage processElectionMessage(
             ElectionMessage message,
             int localId,
             int localJac) {
 
-        boolean localWorkerWins = false;
-
-        // Lower JAC is preferred
-        if (localJac < message.getCandidateJac()) {
-            localWorkerWins = true;
+        if (message == null) {
+            return null;
         }
 
-        // If JAC is equal, higher worker ID wins
-        else if (localJac == message.getCandidateJac()
-                && localId > message.getCandidateId()) {
+        ElectionMessage currentBest =
+                bestCandidates.get(message.getTerm());
 
-            localWorkerWins = true;
+        ElectionMessage candidate = message;
+
+        if (isBetter(
+                localJac,
+                localId,
+                candidate.getCandidateJac(),
+                candidate.getCandidateId())) {
+
+            candidate = new ElectionMessage(
+                    UUID.randomUUID().toString(),
+                    ElectionMessage.MessageType.ELECTION,
+                    localId,
+                    localJac,
+                    message.getTerm(),
+                    localId
+            );
         }
 
-        if (localWorkerWins) {
+        if (currentBest == null ||
+                isBetter(
+                        candidate.getCandidateJac(),
+                        candidate.getCandidateId(),
+                        currentBest.getCandidateJac(),
+                        currentBest.getCandidateId())) {
 
-            message.setCandidateId(localId);
-            message.setCandidateJac(localJac);
+            bestCandidates.put(message.getTerm(), candidate);
         }
 
-        return message;
+        return candidate;
     }
 
     /**
-     * Creates a COORDINATOR announcement.
+     * Creates the COORDINATOR announcement message.
      */
     public ElectionMessage createCoordinatorAnnouncement(
             int electedCoordinatorId,
@@ -108,11 +132,37 @@ public class ElectionManager {
     }
 
     /**
-     * Clears old election information.
+     * Returns the best candidate currently known for a term.
+     */
+    public ElectionMessage getBestCandidate(int term) {
+        return bestCandidates.get(term);
+    }
+
+    /**
+     * Clears election state.
      */
     public void resetElectionState() {
-
-        // Old message IDs are cleared when starting a new term.
         seenMessageIds.clear();
+        bestCandidates.clear();
+    }
+
+    /**
+     * Clears candidate information for a specific term.
+     */
+    public void resetForTerm(int term) {
+        bestCandidates.remove(term);
+    }
+
+    /**
+     * Determines which candidate is better.
+     */
+    private boolean isBetter(
+            int jacA,
+            int idA,
+            int jacB,
+            int idB) {
+
+        return jacA < jacB ||
+                (jacA == jacB && idA > idB);
     }
 }
