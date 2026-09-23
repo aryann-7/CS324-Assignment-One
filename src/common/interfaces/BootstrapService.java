@@ -26,8 +26,9 @@ public interface BootstrapService extends Remote {
      * Connects joining worker randomly to an active worker.
      *
      * @param workerId Unique integer identifier of the requesting worker.
-     * @return List of assigned neighbor descriptors/endpoints (e.g., host:port or
-     *         remote references).
+     * @return One randomly selected active worker descriptor in workerId|host|port
+     *         format (e.g., 101|localhost|1101), excluding the requesting worker;
+     *         an empty list if no other workers are registered.
      * @throws RemoteException if an RMI communication failure occurs.
      */
     List<String> getInitialNeighbors(int workerId) throws RemoteException;
