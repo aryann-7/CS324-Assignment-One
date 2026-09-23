@@ -23,14 +23,14 @@ public class BootstrapServiceImplTest {
         try {
             service.registerWorker(1, "localhost", 1);
             service.registerWorker(Integer.MAX_VALUE, "localhost", 65535);
-            check(service.getInitialNeighbors(1).equals(Collections.singletonList("localhost:65535")),
+            check(service.getInitialNeighbors(1).equals(Collections.singletonList(Integer.MAX_VALUE + "|localhost|65535")),
                     "Maximum positive worker ID and port should be accepted");
-            check(service.getInitialNeighbors(Integer.MAX_VALUE).equals(Collections.singletonList("localhost:1")),
+            check(service.getInitialNeighbors(Integer.MAX_VALUE).equals(Collections.singletonList("1|localhost|1")),
                     "Worker ID 1 and port 1 should be accepted");
 
             expectRegistrationRejected(service, 1, "localhost", 1);
             expectRegistrationRejected(service, 1, "other-host", 1102);
-            check(service.getInitialNeighbors(Integer.MAX_VALUE).equals(Collections.singletonList("localhost:1")),
+            check(service.getInitialNeighbors(Integer.MAX_VALUE).equals(Collections.singletonList("1|localhost|1")),
                     "Duplicate registration must not replace the original endpoint");
 
             expectRegistrationRejected(service, 101, null, 1101);
@@ -60,15 +60,15 @@ public class BootstrapServiceImplTest {
                     "The first worker should have no neighbors");
 
             service.registerWorker(102, "localhost", 1102);
-            check(service.getInitialNeighbors(102).equals(Collections.singletonList("localhost:1101")),
+            check(service.getInitialNeighbors(102).equals(Collections.singletonList("101|localhost|1101")),
                     "The second worker should receive the first worker");
 
             service.registerWorker(103, "localhost", 1103);
             service.registerWorker(104, "localhost", 1104);
             List<String> endpoints = Arrays.asList(
-                    "localhost:1101", "localhost:1102", "localhost:1103", "localhost:1104");
+                    "101|localhost|1101", "102|localhost|1102", "103|localhost|1103", "104|localhost|1104");
             for (int workerId = 101; workerId <= 104; workerId++) {
-                String ownEndpoint = "localhost:" + (workerId + 1000);
+                String ownEndpoint = workerId + "|localhost|" + (workerId + 1000);
                 for (int attempt = 0; attempt < 100; attempt++) {
                     List<String> neighbors = service.getInitialNeighbors(workerId);
                     check(neighbors.size() == 1, "Discovery should return exactly one peer");
@@ -91,17 +91,17 @@ public class BootstrapServiceImplTest {
             service.registerWorker(103, "localhost", 1103);
 
             service.deregisterWorker(102);
-            check(service.getInitialNeighbors(101).equals(Collections.singletonList("localhost:1103")),
+            check(service.getInitialNeighbors(101).equals(Collections.singletonList("103|localhost|1103")),
                     "A removed worker must not be eligible for discovery");
-            check(service.getInitialNeighbors(103).equals(Collections.singletonList("localhost:1101")),
+            check(service.getInitialNeighbors(103).equals(Collections.singletonList("101|localhost|1101")),
                     "Removal must preserve the other registered workers");
             expectDiscoveryRejected(service, 102);
 
             service.deregisterWorker(999);
             service.deregisterWorker(102);
-            check(service.getInitialNeighbors(101).equals(Collections.singletonList("localhost:1103")),
+            check(service.getInitialNeighbors(101).equals(Collections.singletonList("103|localhost|1103")),
                     "Unknown or repeated deregistration must preserve the registry");
-            check(service.getInitialNeighbors(103).equals(Collections.singletonList("localhost:1101")),
+            check(service.getInitialNeighbors(103).equals(Collections.singletonList("101|localhost|1101")),
                     "Unknown or repeated deregistration must preserve the registry");
             expectDiscoveryRejected(service, 102);
 
