@@ -31,6 +31,12 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
         this.termExpiredListener = listener;
     }
 
+    private void notifyTermExpired() {
+        if (termExpiredListener != null) {
+            new Thread(termExpiredListener, "term-expiry-trigger").start();
+        }
+    }
+
     private final java.util.List<common.interfaces.WorkerService> activeWorkers = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     private final java.util.concurrent.ExecutorService dispatchPool = java.util.concurrent.Executors.newCachedThreadPool();
