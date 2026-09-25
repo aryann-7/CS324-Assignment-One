@@ -44,7 +44,7 @@ public class BootstrapServiceImplTest {
             expectRegistrationRejected(service, Integer.MIN_VALUE, "localhost", 1101);
 
             service.registerWorker(101, "localhost", 1101);
-            check(service.getInitialNeighbors(101).size() == 1,
+            check(service.getInitialNeighbors(101).size() == 2,
                     "Failed registration attempts must not prevent a later valid registration");
         } finally {
             UnicastRemoteObject.unexportObject(service, true);
@@ -71,9 +71,10 @@ public class BootstrapServiceImplTest {
                 String ownEndpoint = workerId + "|localhost|" + (workerId + 1000);
                 for (int attempt = 0; attempt < 100; attempt++) {
                     List<String> neighbors = service.getInitialNeighbors(workerId);
-                    check(neighbors.size() == 1, "Discovery should return exactly one peer");
-                    check(endpoints.contains(neighbors.get(0)), "The peer must be a registered worker");
-                    check(!ownEndpoint.equals(neighbors.get(0)), "A worker must not receive itself");
+                    check(neighbors.size() == 2, "Discovery should return up to 2 distinct peers for resilience");
+                    check(!neighbors.get(0).equals(neighbors.get(1)), "Returned peers must be distinct");
+                    check(endpoints.contains(neighbors.get(0)) && endpoints.contains(neighbors.get(1)), "Peers must be registered workers");
+                    check(!ownEndpoint.equals(neighbors.get(0)) && !ownEndpoint.equals(neighbors.get(1)), "A worker must not receive itself");
                 }
             }
             expectDiscoveryRejected(service, 999);

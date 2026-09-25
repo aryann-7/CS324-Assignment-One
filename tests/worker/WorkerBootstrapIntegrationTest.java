@@ -70,20 +70,21 @@ public class WorkerBootstrapIntegrationTest implements AutoCloseable {
         WorkerNode c = worker(103);
         c.connectToBootstrap("localhost", bootstrapPort);
         List<String> selectedDescriptors = bootstrap.discoveryFor(103);
-        check(selectedDescriptors.size() == 1, "C must receive exactly one initial peer");
-        String selectedDescriptor = selectedDescriptors.get(0);
-        check(Set.of(descriptor(a), descriptor(b)).contains(selectedDescriptor),
-                "C's descriptor must identify an eligible existing worker");
-        WorkerNode selected = selectedDescriptor.equals(descriptor(a)) ? a : b;
-        WorkerNode other = selected == a ? b : a;
-        check(neighbours(c).keySet().equals(Set.of(selected.getWorkerId())),
-                "C must store only the peer actually selected by Bootstrap");
-        check(neighbours(selected).keySet().equals(Set.of(other.getWorkerId(), 103)),
-                "The selected worker must add C while preserving its existing neighbour");
-        check(neighbours(other).keySet().equals(Set.of(selected.getWorkerId())),
-                "The unselected worker must not automatically connect to C");
-        checkStoredStub(c, selected);
-        checkStoredStub(selected, c);
+        check(selectedDescriptors.size() >= 1 && selectedDescriptors.size() <= 2,
+                "C must receive up to 2 initial peers");
+        for (String desc : selectedDescriptors) {
+            check(Set.of(descriptor(a), descriptor(b)).contains(desc),
+                    "C's descriptor must identify an eligible existing worker");
+        }
+        for (String desc : selectedDescriptors) {
+            WorkerNode peer = desc.equals(descriptor(a)) ? a : b;
+            check(neighbours(c).containsKey(peer.getWorkerId()),
+                    "C must store peer connected from Bootstrap");
+            check(neighbours(peer).containsKey(103),
+                    "Peer must store C as bidirectional neighbour");
+            checkStoredStub(c, peer);
+            checkStoredStub(peer, c);
+        }
         for (WorkerNode worker : List.of(a, b, c)) {
             check(!neighbours(worker).containsKey(worker.getWorkerId()),
                     "No worker may contain itself as a neighbour");

@@ -28,10 +28,19 @@ public class BootstrapServiceImpl
     private final Map<Integer, String> registeredWorkers =
             new ConcurrentHashMap<>();
 
+    private final int maxNeighborsPerWorker;
+
     public BootstrapServiceImpl()
             throws RemoteException {
 
+        this(Integer.getInteger("cs324.maxNeighbors", 2));
+    }
+
+    public BootstrapServiceImpl(int maxNeighborsPerWorker)
+            throws RemoteException {
+
         super();
+        this.maxNeighborsPerWorker = Math.max(1, maxNeighborsPerWorker);
     }
 
     /**
@@ -95,15 +104,18 @@ public class BootstrapServiceImpl
             return Collections.emptyList();
         }
 
-        int index = ThreadLocalRandom.current().nextInt(candidates.size());
-        String selected = candidates.get(index);
+        // Select up to maxNeighborsPerWorker random distinct neighbors (min(maxNeighborsPerWorker, candidates.size()))
+        // to form a resilient connected mesh rather than a fragile single linear tree.
+        Collections.shuffle(candidates, ThreadLocalRandom.current());
+        int count = Math.min(maxNeighborsPerWorker, candidates.size());
+        List<String> selected = new ArrayList<>(candidates.subList(0, count));
 
         System.out.println(
                 "Worker " + workerId +
-                " connected randomly to " +
+                " assigned initial neighbours: " +
                 selected);
 
-        return Collections.singletonList(selected);
+        return selected;
     }
 
     /**
