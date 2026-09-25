@@ -712,11 +712,12 @@ public class WorkerNode extends UnicastRemoteObject
             coordinatorManager.setTermExpiredListener(
                     this::stepDownToWorker);
 
-            for (WorkerService worker :
-                    neighbours.values()) {
+            // Add coordinator itself as a worker so it can participate in computation
+            coordinatorManager.addWorker(this);
 
-                coordinatorManager.addWorker(
-                        worker);
+            // Populate all reachable workers across the cluster
+            for (WorkerService worker : discoverClusterWorkers()) {
+                coordinatorManager.addWorker(worker);
             }
 
             // Register / rebind CoordinatorService in both the Bootstrap registry and local worker registry
@@ -744,6 +745,50 @@ public class WorkerNode extends UnicastRemoteObject
                     "Failed to become coordinator: " +
                     e.getMessage());
         }
+    }
+
+    /**
+     * Discovers all reachable worker nodes across the cluster.
+     * Starts with direct neighbours, and scans common worker ports on known hosts
+     * or the Bootstrap registry to locate any active Worker-<id> instances.
+     *
+     * @return collection of remote WorkerService stubs across the cluster (excluding self)
+     */
+    private java.util.Collection<WorkerService> discoverClusterWorkers() {
+        Map<Integer, WorkerService> clusterWorkers = new ConcurrentHashMap<>(neighbours);
+
+        // Scan ports around the current worker's port range (e.g. 1101-1110) on localhost/host
+        // to discover any active workers that may be several hops away in an unstructured network.
+        int basePort = 1101;
+        int maxWorkersToScan = 10;
+        for (int i = 0; i < maxWorkersToScan; i++) {
+            int targetPort = basePort + i;
+            if (targetPort == port) {
+                continue; // Skip self
+            }
+
+            try {
+                Registry workerRegistry = LocateRegistry.getRegistry(host, targetPort);
+                String[] boundNames = workerRegistry.list();
+                for (String boundName : boundNames) {
+                    if (boundName.startsWith("Worker-")) {
+                        try {
+                            int targetWorkerId = Integer.parseInt(boundName.substring("Worker-".length()));
+                            if (targetWorkerId != workerId && !clusterWorkers.containsKey(targetWorkerId)) {
+                                WorkerService stub = (WorkerService) workerRegistry.lookup(boundName);
+                                clusterWorkers.put(targetWorkerId, stub);
+                                System.out.println("Coordinator Worker " + workerId + " discovered cluster worker: " + boundName + " on port " + targetPort);
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // Port not open or no registry on this port - normal during partial cluster setups
+            }
+        }
+
+        return clusterWorkers.values();
     }
 
     public synchronized void stepDownToWorker() {
