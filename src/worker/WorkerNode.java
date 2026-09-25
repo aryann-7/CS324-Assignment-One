@@ -562,9 +562,15 @@ public class WorkerNode extends UnicastRemoteObject
         }
     }
 
+    private volatile String bootstrapHost = "localhost";
+    private volatile int bootstrapPort = 1099;
+
     public void connectToBootstrap(
             String bootstrapHost,
             int bootstrapPort) {
+
+        this.bootstrapHost = bootstrapHost;
+        this.bootstrapPort = bootstrapPort;
 
         try {
 
@@ -713,6 +719,21 @@ public class WorkerNode extends UnicastRemoteObject
                         worker);
             }
 
+            // Register / rebind CoordinatorService in both the Bootstrap registry and local worker registry
+            try {
+                Registry bootstrapRegistry = LocateRegistry.getRegistry(bootstrapHost, bootstrapPort);
+                bootstrapRegistry.rebind("CoordinatorService", coordinatorManager);
+                System.out.println("Worker " + workerId + " bound CoordinatorService to Bootstrap registry (" + bootstrapHost + ":" + bootstrapPort + ").");
+            } catch (Exception e) {
+                System.err.println("Could not bind CoordinatorService to Bootstrap registry: " + e.getMessage());
+            }
+
+            try {
+                Registry localRegistry = LocateRegistry.getRegistry(host, port);
+                localRegistry.rebind("CoordinatorService", coordinatorManager);
+            } catch (Exception ignored) {
+            }
+
             System.out.println(
                     "Worker " + workerId +
                     " is now coordinator.");
@@ -726,6 +747,20 @@ public class WorkerNode extends UnicastRemoteObject
     }
 
     public synchronized void stepDownToWorker() {
+
+        // Unbind CoordinatorService from registries upon stepping down
+        try {
+            Registry bootstrapRegistry = LocateRegistry.getRegistry(bootstrapHost, bootstrapPort);
+            bootstrapRegistry.unbind("CoordinatorService");
+            System.out.println("Worker " + workerId + " unbound CoordinatorService from Bootstrap registry.");
+        } catch (Exception ignored) {
+        }
+
+        try {
+            Registry localRegistry = LocateRegistry.getRegistry(host, port);
+            localRegistry.unbind("CoordinatorService");
+        } catch (Exception ignored) {
+        }
 
         if (coordinatorManager != null) {
 
