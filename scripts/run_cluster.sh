@@ -64,7 +64,7 @@ echo "[6/6] Launching $NUM_CLIENTS Client GUI instances..."
 CLIENT_PIDS=()
 for ((c=1; c<=NUM_CLIENTS; c++)); do
     echo "Starting Client GUI #$c..."
-    java -cp bin client.ClientMain &
+    java -cp bin client.ClientMain $c &
     CLIENT_PIDS+=($!)
     sleep 1
 done

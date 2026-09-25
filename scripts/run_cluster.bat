@@ -68,7 +68,7 @@ timeout /t 2 /nobreak >nul
 echo [6/6] Launching %NUM_CLIENTS% Client GUI instances...
 for /L %%c in (1,1,%NUM_CLIENTS%) do (
     echo Starting Client GUI #%%c...
-    start "Client GUI #%%c" java -cp bin client.ClientMain
+    start "Client GUI #%%c" java -cp bin client.ClientMain %%c
     timeout /t 1 /nobreak >nul
 )
 
