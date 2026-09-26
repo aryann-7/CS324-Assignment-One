@@ -240,10 +240,7 @@ This project uses Git for version control with separate feature branches:
 - `feature/section3-leader-election` - Leader Election implementation
 - `feature/section4-client-gui` - Client GUI implementation (this section)
 
-## Contributors
 
-DistriLab Research Group - USP
-CS324 Distributed Systems Course
 
 ## License
 
