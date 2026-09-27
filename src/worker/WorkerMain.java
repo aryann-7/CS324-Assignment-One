@@ -98,6 +98,15 @@ public class WorkerMain {
                     bootstrapPort);
 
             /*
+             * Start election after a short delay to allow other workers to join.
+             */
+            Thread.sleep(3000); // Wait 3 seconds for other workers
+            if (workerId == 1) {
+                System.out.println("Worker 1 initiating election...");
+                worker.startElection();
+            }
+
+            /*
              * Keep the process alive.
              */
             synchronized (worker) {
