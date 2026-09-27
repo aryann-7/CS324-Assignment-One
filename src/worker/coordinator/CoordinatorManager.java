@@ -59,7 +59,7 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
     }
 
     @Override
-    public synchronized JobResult submitJob(JobRequest request) throws RemoteException {
+    public JobResult submitJob(JobRequest request) throws RemoteException {
         long startTime = System.currentTimeMillis();
         JobResult finalResult = new JobResult();
 

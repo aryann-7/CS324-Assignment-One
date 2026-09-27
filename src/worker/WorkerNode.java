@@ -349,22 +349,31 @@ public class WorkerNode extends UnicastRemoteObject
                 }
 
                 Set<Integer> pending = pendingReplies.get(electionId);
+                boolean shouldCheckFinished = false;
+                ElectionMessage message = null;
 
                 if (pending != null) {
-
-                        pending.remove(
-                                        reply.getSenderId());
+                        synchronized (pending) {
+                                pending.remove(reply.getSenderId());
+                                if (pending.isEmpty()) {
+                                        shouldCheckFinished = true;
+                                        ElectionCandidate best = bestCandidates.get(electionId);
+                                        int bId = best != null ? best.workerId : workerId;
+                                        int bJac = best != null ? best.jac : jac.get();
+                                        message = new ElectionMessage(
+                                                        electionId,
+                                                        ElectionMessage.MessageType.ELECTION,
+                                                        bId,
+                                                        bJac,
+                                                        reply.getTerm(),
+                                                        workerId);
+                                }
+                        }
                 }
 
-                ElectionMessage message = new ElectionMessage(
-                                electionId,
-                                ElectionMessage.MessageType.ELECTION,
-                                bestCandidates.get(electionId).workerId,
-                                bestCandidates.get(electionId).jac,
-                                reply.getTerm(),
-                                workerId);
-
-                checkElectionFinished(message);
+                if (shouldCheckFinished && message != null) {
+                        checkElectionFinished(message);
+                }
         }
 
         private void checkElectionFinished(
@@ -683,10 +692,26 @@ public class WorkerNode extends UnicastRemoteObject
                         coordinatorManager.setTermExpiredListener(
                                         this::stepDownToWorker);
 
-                        for (WorkerService worker : neighbours.values()) {
+                        // Add self as an active compute worker
+                        coordinatorManager.addWorker(this);
 
-                                coordinatorManager.addWorker(
-                                                worker);
+                        // Add direct neighbours
+                        for (WorkerService worker : neighbours.values()) {
+                                coordinatorManager.addWorker(worker);
+                        }
+
+                        // Discover any additional reachable workers from bootstrap if available
+                        try {
+                                BootstrapService bootstrap = (BootstrapService) Naming.lookup(
+                                                "rmi://" + bootstrapHost + ":" + bootstrapPort + "/BootstrapService");
+                                List<String> endpoints = bootstrap.getInitialNeighbors(workerId);
+                                for (String ep : endpoints) {
+                                        addNeighbourFromEndpoint(ep);
+                                }
+                                for (WorkerService worker : neighbours.values()) {
+                                        coordinatorManager.addWorker(worker);
+                                }
+                        } catch (Exception ignored) {
                         }
 
                         // Register / rebind CoordinatorService in both the Bootstrap registry and local

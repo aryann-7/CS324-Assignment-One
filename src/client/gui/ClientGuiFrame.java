@@ -318,26 +318,62 @@ public class ClientGuiFrame extends JFrame {
         statusLabel.setText(" Submitting " + jobId + "...");
         logMessage("Submitting " + request.getJobType() + " (" + jobId + ") to coordinator...");
 
-        // Dispatch via dedicated client thread pool
+        // Dispatch via dedicated client thread pool with retry tolerance for coordinator re-elections
         clientSubmissionPool.submit(() -> {
-            CoordinatorService coordinator = lookupCoordinator(host, port);
-            if (coordinator == null) {
-                logMessage("ERROR [" + jobId + "]: Cannot reach active coordinator at " + host + ":" + port);
-                SwingUtilities.invokeLater(() -> statusLabel.setText(" Failed to reach coordinator"));
-                return;
+            JobResult result = null;
+            Exception lastException = null;
+
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                CoordinatorService coordinator = lookupCoordinator(host, port);
+                if (coordinator == null) {
+                    if (attempt < 3) {
+                        logMessage("RETRY [" + jobId + "]: Coordinator in transition/re-election, retrying in 1.5s (attempt " + attempt + "/3)...");
+                        try {
+                            Thread.sleep(1500);
+                        } catch (InterruptedException ignored) {}
+                        continue;
+                    }
+                    logMessage("ERROR [" + jobId + "]: Cannot reach active coordinator at " + host + ":" + port);
+                    SwingUtilities.invokeLater(() -> statusLabel.setText(" Failed to reach coordinator"));
+                    return;
+                }
+
+                try {
+                    result = coordinator.submitJob(request);
+                    if (result != null && result.isSuccess()) {
+                        break;
+                    } else if (result != null && result.getErrorMessage() != null && result.getErrorMessage().contains("Election required")) {
+                        if (attempt < 3) {
+                            logMessage("RETRY [" + jobId + "]: Coordinator term ended, waiting for new coordinator election...");
+                            try {
+                                Thread.sleep(2000);
+                            } catch (InterruptedException ignored) {}
+                            continue;
+                        }
+                    }
+                    break;
+                } catch (Exception e) {
+                    lastException = e;
+                    if (attempt < 3) {
+                        logMessage("RETRY [" + jobId + "]: Communication interrupted (" + e.getMessage() + "), retrying in 1.5s...");
+                        try {
+                            Thread.sleep(1500);
+                        } catch (InterruptedException ignored) {}
+                    }
+                }
             }
 
-            try {
-                JobResult result = coordinator.submitJob(request);
-                if (result.isSuccess()) {
-                    logMessage("COMPLETED [" + jobId + "]: Result = " + result.getResultValue() + " (Elapsed: " + result.getExecutionTimeMs() + " ms)");
-                    SwingUtilities.invokeLater(() -> statusLabel.setText(" Completed " + jobId + " in " + result.getExecutionTimeMs() + "ms"));
+            final JobResult evaluatedResult = result;
+            if (evaluatedResult != null) {
+                if (evaluatedResult.isSuccess()) {
+                    logMessage("COMPLETED [" + jobId + "]: Result = " + evaluatedResult.getResultValue() + " (Elapsed: " + evaluatedResult.getExecutionTimeMs() + " ms)");
+                    SwingUtilities.invokeLater(() -> statusLabel.setText(" Completed " + jobId + " in " + evaluatedResult.getExecutionTimeMs() + "ms"));
                 } else {
-                    logMessage("FAILED [" + jobId + "]: " + result.getErrorMessage());
+                    logMessage("FAILED [" + jobId + "]: " + evaluatedResult.getErrorMessage());
                     SwingUtilities.invokeLater(() -> statusLabel.setText(" Job " + jobId + " failed"));
                 }
-            } catch (Exception e) {
-                logMessage("COMMUNICATION ERROR [" + jobId + "]: " + e.getMessage());
+            } else if (lastException != null) {
+                logMessage("COMMUNICATION ERROR [" + jobId + "]: " + lastException.getMessage());
                 SwingUtilities.invokeLater(() -> statusLabel.setText(" Error submitting " + jobId));
             }
         });

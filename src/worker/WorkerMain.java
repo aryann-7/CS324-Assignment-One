@@ -85,11 +85,15 @@ public class WorkerMain {
                                         bootstrapPort);
 
                         /*
-                         * Start election after a short delay to allow other workers to join.
+                         * Start election after a short delay to allow cluster peers to join and form the mesh.
+                         * To prevent simultaneous conflicting election trees on boot, only the primary worker
+                         * (worker 101 or when specifically requested) initiates the election flood.
                          */
-                        Thread.sleep(3000); // Wait 3 seconds for other workers
-                        System.out.println("Worker 1 initiating election...");
-                        worker.startElection();
+                        if (workerId == 101 || Boolean.getBoolean("cs324.initiateElection")) {
+                                Thread.sleep(3000); // Wait 3 seconds for cluster topology to settle
+                                System.out.println("Worker " + workerId + " initiating initial cluster election...");
+                                worker.startElection();
+                        }
 
                         /*
                          * Keep the process alive.
