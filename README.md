@@ -14,21 +14,21 @@ A fully-functional distributed computing cluster implementation using Java RMI t
 
 1. **Start Bootstrap Server:** (Run in terminal and set directory to where the project is located)
 
-   java -cp out bootstrap.BootstrapServer
+   java -cp bin bootstrap.BootstrapServer
 
 
 2. **Start Worker Nodes** (open 3 new terminals):
 
-   java -cp out worker.WorkerMain 101 localhost 1101 localhost 1099
-   java -cp out worker.WorkerMain 102 localhost 1102 localhost 1099
-   java -cp out worker.WorkerMain 103 localhost 1103 localhost 1099
+   java -cp bin worker.WorkerMain 101 localhost 1101 localhost 1099
+   java -cp bin worker.WorkerMain 102 localhost 1102 localhost 1099
+   java -cp bin worker.WorkerMain 103 localhost 1103 localhost 1099
 
 
 3. **Wait for Election** (look for "Worker X has become the COORDINATOR" message)
 
 4. **Start Client:**
 
-   java -cp out client.ClientMain 1
+   java -cp bin client.ClientMain 1
 
 
 Now you can submit jobs through the GUI
@@ -95,11 +95,11 @@ A distributed computing cluster implementation using Java RMI that allows jobs t
 
 ## How to Compile
 
-From the project root directory, the easiest option is to just run the cluster script (Windows: `scripts\run_cluster.bat`, Mac/Linux: `scripts/run_cluster.sh`) — it compiles everything to `out/` automatically before launching.
+From the project root directory, the easiest option is to just run the cluster script (Windows: `scripts\run_cluster.bat`, Mac/Linux: `scripts/run_cluster.sh`) — it compiles everything to `bin/` automatically before launching.
 
 To compile manually instead:
 
-javac -d out -sourcepath src src/bootstrap/BootstrapServer.java src/worker/WorkerMain.java src/client/ClientMain.java
+javac -d bin -sourcepath src src/bootstrap/BootstrapServer.java src/worker/WorkerMain.java src/client/ClientMain.java
 
 Listing each entry point and using `-sourcepath src` lets `javac` automatically pull in every class
 
@@ -110,7 +110,7 @@ Listing each entry point and using `-sourcepath src` lets `javac` automatically 
 The Bootstrap Node must be started first as it maintains the registry of active workers.
 
 
-java -cp out bootstrap.BootstrapServer
+java -cp bin bootstrap.BootstrapServer
 
 
 Expected output:
@@ -124,7 +124,7 @@ Service: BootstrapService
 
 To use a port other than the default 1099:
 
-java -cp out bootstrap.BootstrapServer 2000
+java -cp bin bootstrap.BootstrapServer 2000
 
 If you do this every worker and client command in this README needs its `1099` changed to match the bootstrap port
 
@@ -134,16 +134,16 @@ Start multiple worker nodes. Each worker needs a unique ID, its own port and the
 
 
 # Start Worker 101
-java -cp out worker.WorkerMain 101 localhost 1101 localhost 1099
+java -cp bin worker.WorkerMain 101 localhost 1101 localhost 1099
 
 # Start Worker 102 (in a new terminal)
-java -cp out worker.WorkerMain 102 localhost 1102 localhost 1099
+java -cp bin worker.WorkerMain 102 localhost 1102 localhost 1099
 
 # Start Worker 103 (in a new terminal)
-java -cp out worker.WorkerMain 103 localhost 1103 localhost 1099
+java -cp bin worker.WorkerMain 103 localhost 1103 localhost 1099
 
 
-Command format: `java -cp out worker.WorkerMain <workerID> <host> <workerPort> <bootstrapHost> <bootstrapPort>`
+Command format: `java -cp bin worker.WorkerMain <workerID> <host> <workerPort> <bootstrapHost> <bootstrapPort>`
 
 Expected output from each worker:
 
@@ -175,13 +175,13 @@ Once a coordinator is elected, clients can connect and submit jobs.
 
 
 # Start Client 1
-java -cp out client.ClientMain 1
+java -cp bin client.ClientMain 1
 
 # Start Client 2 (in a new terminal, for testing multiple concurrent clients)
-java -cp out client.ClientMain 2
+java -cp bin client.ClientMain 2
 
 
-Command format: `java -cp out client.ClientMain <clientID>`
+Command format: `java -cp bin client.ClientMain <clientID>`
 
 ## Using the Client GUI
 
@@ -225,6 +225,8 @@ An automated end-to-end integration test is included at `tests/client/ClientJobE
 - Multiple independent clients submitting jobs to the coordinator simultaneously
 - Correct recovery across a real 5-job coordinator term rotation and re-election
 
+This test compiles to a separate `out/` folder, independent of the cluster's own `bin/` folder — it builds and runs entirely on its own and doesn't require the cluster to already be running.
+
 Run it with:
 
 javac -d out -sourcepath "src;tests" tests/client/ClientJobEndToEndTest.java
@@ -247,18 +249,18 @@ Two CSV test files are provided in `data/`:
 
 
 # Terminal 1: Bootstrap
-java -cp out bootstrap.BootstrapServer
+java -cp bin bootstrap.BootstrapServer
 
 # Terminal 2-4: Workers
-java -cp out worker.WorkerMain 101 localhost 1101 localhost 1099
-java -cp out worker.WorkerMain 102 localhost 1102 localhost 1099
-java -cp out worker.WorkerMain 103 localhost 1103 localhost 1099
+java -cp bin worker.WorkerMain 101 localhost 1101 localhost 1099
+java -cp bin worker.WorkerMain 102 localhost 1102 localhost 1099
+java -cp bin worker.WorkerMain 103 localhost 1103 localhost 1099
 
 # Wait for election to complete and coordinator to be elected
 
 # Terminal 5-6: Clients
-java -cp out client.ClientMain 1
-java -cp out client.ClientMain 2
+java -cp bin client.ClientMain 1
+java -cp bin client.ClientMain 2
 
 # Use the GUI to submit jobs and see distributed computation in action
 
