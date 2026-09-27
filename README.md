@@ -1,7 +1,58 @@
-# CS324-Assignment-One
-Assignment One Project for my CS324 Distributed Systems Course @USP
+# CS324 Distributed Computing Cluster System 🖥️
 
-## Distributed Computing Cluster System
+**Assignment One Project for CS324 Distributed Systems Course @USP**
+
+A fully-functional distributed computing cluster implementation using Java RMI that allows computational jobs to run in parallel across multiple worker nodes under the coordination of an automatically-elected leader.
+
+[![Java](https://img.shields.io/badge/Java-8%2B-orange.svg)](https://www.oracle.com/java/)
+[![RMI](https://img.shields.io/badge/RMI-Enabled-blue.svg)](https://docs.oracle.com/javase/tutorial/rmi/)
+[![Status](https://img.shields.io/badge/Status-Complete-success.svg)](https://github.com)
+
+## 🎯 Quick Start
+
+**Follow these 4 simple steps:**
+
+1. **Start Bootstrap Server:**
+   ```bash
+   java -cp out bootstrap.BootstrapServer
+   ```
+
+2. **Start Worker Nodes** (open 3 new terminals):
+   ```bash
+   java -cp out worker.WorkerMain 1 localhost 1101 localhost 1099
+   java -cp out worker.WorkerMain 2 localhost 1102 localhost 1099
+   java -cp out worker.WorkerMain 3 localhost 1103 localhost 1099
+   ```
+
+3. **Wait for Election** (look for "Worker X has become the COORDINATOR" message)
+
+4. **Start Client:**
+   ```bash
+   java -cp out client.ClientMain
+   ```
+
+Now you can submit jobs through the GUI! 🎉
+
+---
+
+## 📚 Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [System Architecture](#system-architecture)
+- [How It Works](#how-it-works)
+- [Installation & Setup](#installation--setup)
+- [Running the System](#running-the-system)
+- [Using the Client GUI](#using-the-client-gui)
+- [Testing Scenarios](#testing-scenarios)
+- [Troubleshooting](#troubleshooting)
+- [Code Structure](#code-structure)
+- [Advanced Topics](#advanced-topics)
+- [License](#license)
+
+---
+
+## 🎓 Overview
 
 A distributed computing cluster implementation using Java RMI that allows jobs to run across multiple worker nodes under the coordination of an elected leader.
 
