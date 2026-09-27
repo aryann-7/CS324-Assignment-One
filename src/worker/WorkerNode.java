@@ -23,60 +23,37 @@ import worker.coordinator.CoordinatorManager;
 import worker.election.ElectionManager;
 
 public class WorkerNode extends UnicastRemoteObject
-        implements WorkerService {
+                implements WorkerService {
 
-    private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 1L;
+        private final int workerId;
+        private final String host;
+        private final int port;
+        private volatile int coordinatorId = -1;
+        private final AtomicInteger currentTerm = new AtomicInteger(1);
+        private final AtomicInteger jac = new AtomicInteger(0);
+        private volatile boolean isCoordinator = false;
+        private final ElectionManager electionManager = new ElectionManager();
+        private CoordinatorManager coordinatorManager;
+        private final Map<Integer, WorkerService> neighbours = new ConcurrentHashMap<>();
+        private final ExecutorService computationThreadPool = Executors.newFixedThreadPool(4);
+        private final Map<String, Integer> electionParents = new ConcurrentHashMap<>();
+        private final Map<String, Set<Integer>> pendingReplies = new ConcurrentHashMap<>();
+        private final Map<String, ElectionCandidate> bestCandidates = new ConcurrentHashMap<>();
 
-    private final String leaderman = "cs324";
+        public WorkerNode(
+                        int workerId,
+                        String host,
+                        int port) throws RemoteException {
 
-    private final int workerId;
+                super();
 
-    private final String host;
-    private final int port;
+                this.workerId = workerId;
+                this.host = host;
+                this.port = port;
+        }
 
-    private volatile int coordinatorId = -1;
-
-    private final AtomicInteger currentTerm =
-            new AtomicInteger(1);
-
-    private final AtomicInteger jac =
-            new AtomicInteger(0);
-
-    private volatile boolean isCoordinator = false;
-
-    private final ElectionManager electionManager =
-            new ElectionManager();
-
-    private CoordinatorManager coordinatorManager;
-
-    private final Map<Integer, WorkerService> neighbours =
-            new ConcurrentHashMap<>();
-
-    private final ExecutorService computationThreadPool =
-            Executors.newFixedThreadPool(4);
-
-    private final Map<String, Integer> electionParents =
-            new ConcurrentHashMap<>();
-
-    private final Map<String, Set<Integer>> pendingReplies =
-            new ConcurrentHashMap<>();
-
-    private final Map<String, ElectionCandidate> bestCandidates =
-            new ConcurrentHashMap<>();
-
-    public WorkerNode(
-            int workerId,
-            String host,
-            int port) throws RemoteException {
-
-        super();
-
-        this.workerId = workerId;
-        this.host = host;
-        this.port = port;
-    }
-
-    /**
+        /**
          * A duplicate ELECTION arriving here means this edge is a cycle in
          * the neighbour graph, not part of the spanning tree this flood
          * already built through some other path. The sender is still
@@ -87,9 +64,9 @@ public class WorkerNode extends UnicastRemoteObject
          */
         private void replyToCrossEdge(ElectionMessage message) {
                 int senderId = message.getSenderId();
-                        WorkerService sender = neighbours.get(senderId);
-                        if (sender == null) {
-                                return;
+                WorkerService sender = neighbours.get(senderId);
+                if (sender == null) {
+                        return;
                 }
 
                 ElectionCandidate known = bestCandidates.get(message.getMessageId());
@@ -98,807 +75,722 @@ public class WorkerNode extends UnicastRemoteObject
 
                 try {
                         sender.receiveElectionReply(new ElectionReply(
-                                message.getMessageId(),
-                                message.getTerm(),
-                                workerId,
-                                candidateId,
-                                candidateJac));
+                                        message.getMessageId(),
+                                        message.getTerm(),
+                                        workerId,
+                                        candidateId,
+                                        candidateJac));
                 } catch (Exception e) {
                         System.out.println("Worker " + workerId + " could not reply to cross-edge: " + e.getMessage());
                 }
         }
 
-    @Override
-    public JobResult executeJob(JobTask task)
-            throws RemoteException {
+        @Override
+        public JobResult executeJob(JobTask task)
+                        throws RemoteException {
 
-        if (task == null) {
+                if (task == null) {
 
-            JobResult error = new JobResult();
+                        JobResult error = new JobResult();
 
-            error.setSuccess(false);
-            error.setErrorMessage(
-                    "Received null JobTask");
+                        error.setSuccess(false);
+                        error.setErrorMessage(
+                                        "Received null JobTask");
 
-            return error;
-        }
-
-        try {
-
-            var future =
-                    computationThreadPool.submit(
-                            new JobRunner(task));
-
-            return future.get();
-
-        } catch (InterruptedException e) {
-
-            Thread.currentThread().interrupt();
-
-            JobResult error = new JobResult();
-
-            error.setJobId(task.getJobId());
-            error.setTaskId(task.getTaskId());
-            error.setSuccess(false);
-            error.setErrorMessage(
-                    "Task interrupted: " + e.getMessage());
-
-            return error;
-
-        } catch (Exception e) {
-
-            JobResult error = new JobResult();
-
-            error.setJobId(task.getJobId());
-            error.setTaskId(task.getTaskId());
-            error.setSuccess(false);
-            error.setErrorMessage(
-                    "Execution error: " + e.getMessage());
-
-            return error;
-        }
-    }
-
-    public void startElection() {
-
-        int newTerm =
-                currentTerm.incrementAndGet();
-
-        System.out.println();
-        System.out.println(
-                "====================================");
-
-        System.out.println(
-                "Worker " + workerId +
-                " starting ELECTION.");
-
-        System.out.println(
-                "Term: " + newTerm);
-
-        System.out.println(
-                "Worker JAC: " + jac.get());
-
-        System.out.println(
-                "====================================");
-
-        electionManager.resetElectionState();
-
-        ElectionMessage message =
-                electionManager.initiateElection(
-                        workerId,
-                        jac.get(),
-                        newTerm);
-
-        electionManager.isDuplicateAndMark(
-                message.getMessageId());
-
-        electionParents.put(
-                message.getMessageId(),
-                -1);
-
-        ElectionCandidate localCandidate =
-                new ElectionCandidate(
-                        workerId,
-                        jac.get());
-
-        bestCandidates.put(
-                message.getMessageId(),
-                localCandidate);
-
-        Set<Integer> children =
-                ConcurrentHashMap.newKeySet();
-
-        pendingReplies.put(
-                message.getMessageId(),
-                children);
-
-        for (Map.Entry<Integer, WorkerService> entry
-                : neighbours.entrySet()) {
-
-            children.add(entry.getKey());
-
-            sendElection(
-                    entry.getValue(),
-                    message);
-        }
-
-        checkElectionFinished(message);
-    }
-
-    @Override
-    public void receiveElectionMessage(
-            ElectionMessage message)
-            throws RemoteException {
-
-        if (message == null) {
-            return;
-        }
-
-        if (message.getMessageId() == null
-                || message.getMessageId().isBlank()) {
-
-            System.out.println(
-                    "Worker " + workerId +
-                    " rejected election message with no ID.");
-
-            return;
-        }
-
-        if (electionManager.isDuplicateAndMark(message.getMessageId())) {
-                System.out.println(
-                        "Worker " + workerId +
-                        " ignored duplicate " +
-                        message.getType() +
-                        " message " +
-                        message.getMessageId());
-
-                if (message.getType() == ElectionMessage.MessageType.ELECTION) {
-                        replyToCrossEdge(message);
+                        return error;
                 }
-
-                return;
-        }
-
-        if (message.getType()
-                == ElectionMessage.MessageType.COORDINATOR) {
-
-            receiveCoordinatorMessage(message);
-            return;
-        }
-
-        System.out.println(
-                "Worker " + workerId +
-                " received ELECTION " +
-                message.getMessageId());
-
-        int parentId = message.getSenderId();
-
-        electionParents.put(
-                message.getMessageId(),
-                parentId);
-
-        ElectionMessage updated =
-                electionManager.processElectionMessage(
-                        message,
-                        workerId,
-                        jac.get());
-
-        bestCandidates.put(
-                message.getMessageId(),
-                new ElectionCandidate(
-                        updated.getCandidateId(),
-                        updated.getCandidateJac()));
-
-        Set<Integer> children =
-                ConcurrentHashMap.newKeySet();
-
-        for (Integer neighbourId :
-                neighbours.keySet()) {
-
-            if (neighbourId != parentId) {
-
-                children.add(neighbourId);
-            }
-        }
-
-        System.out.println(
-                "Worker " + workerId +
-                " forwarding ELECTION " +
-                message.getMessageId() +
-                " to " +
-                children.size() +
-                " neighbour(s).");
-
-        pendingReplies.put(
-                message.getMessageId(),
-                children);
-
-        for (Integer neighbourId : children) {
-
-            WorkerService neighbour =
-                    neighbours.get(neighbourId);
-
-            if (neighbour != null) {
-
-                sendElection(
-                        neighbour,
-                        updated);
-            }
-        }
-
-        checkElectionFinished(updated);
-    }
-
-    private void sendElection(
-            WorkerService worker,
-            ElectionMessage message) {
-
-        ElectionMessage forwarded =
-                new ElectionMessage(
-                        message.getMessageId(),
-                        message.getType(),
-                        message.getCandidateId(),
-                        message.getCandidateJac(),
-                        message.getTerm(),
-                        workerId);
-
-        try {
-
-            worker.receiveElectionMessage(
-                    forwarded);
-
-        } catch (Exception e) {
-
-            System.out.println(
-                    "Worker " + workerId +
-                    " could not forward ELECTION: " +
-                    e.getMessage());
-        }
-    }
-
-    @Override
-    public void receiveElectionReply(
-            ElectionReply reply)
-            throws RemoteException {
-
-        if (reply == null) {
-            return;
-        }
-
-        String electionId =
-                reply.getMessageId();
-
-        ElectionCandidate current =
-                bestCandidates.get(electionId);
-
-        ElectionCandidate received =
-                new ElectionCandidate(
-                        reply.getCandidateId(),
-                        reply.getCandidateJac());
-
-        if (current == null ||
-                isBetterCandidate(
-                        received,
-                        current)) {
-
-            bestCandidates.put(
-                    electionId,
-                    received);
-        }
-
-        Set<Integer> pending =
-                pendingReplies.get(electionId);
-
-        if (pending != null) {
-
-            pending.remove(
-                    reply.getSenderId());
-        }
-
-        ElectionMessage message =
-                new ElectionMessage(
-                        electionId,
-                        ElectionMessage.MessageType.ELECTION,
-                        bestCandidates.get(electionId)
-                                .workerId,
-                        bestCandidates.get(electionId)
-                                .jac,
-                        reply.getTerm(),
-                        workerId);
-
-        checkElectionFinished(message);
-    }
-
-    private void checkElectionFinished(
-            ElectionMessage message) {
-                        Set<Integer> pending =
-                pendingReplies.get(
-                        message.getMessageId());
-
-        if (pending != null &&
-                !pending.isEmpty()) {
-
-            return;
-        }
-
-        ElectionCandidate best =
-                bestCandidates.get(
-                        message.getMessageId());
-
-        if (best == null) {
-            return;
-        }
-
-        Integer parent =
-                electionParents.get(
-                        message.getMessageId());
-
-        if (parent == null || parent == -1) {
-
-            System.out.println();
-            System.out.println(
-                    "Election completed.");
-
-            System.out.println(
-                    "Lowest JAC: " +
-                    best.jac);
-
-            System.out.println(
-                    "Selected coordinator: Worker " +
-                    best.workerId);
-
-            announceCoordinator(
-                    best.workerId,
-                    best.jac,
-                    message.getTerm());
-
-        } else {
-
-            WorkerService parentWorker =
-                    neighbours.get(parent);
-
-            if (parentWorker != null) {
 
                 try {
 
-                    ElectionReply reply =
-                            new ElectionReply(
-                                    message.getMessageId(),
-                                    message.getTerm(),
-                                    workerId,
-                                    best.workerId,
-                                    best.jac);
+                        var future = computationThreadPool.submit(
+                                        new JobRunner(task));
 
-                    parentWorker.receiveElectionReply(
-                            reply);
+                        return future.get();
+
+                } catch (InterruptedException e) {
+
+                        Thread.currentThread().interrupt();
+
+                        JobResult error = new JobResult();
+
+                        error.setJobId(task.getJobId());
+                        error.setTaskId(task.getTaskId());
+                        error.setSuccess(false);
+                        error.setErrorMessage(
+                                        "Task interrupted: " + e.getMessage());
+
+                        return error;
 
                 } catch (Exception e) {
 
-                    System.out.println(
-                            "Could not return election result: "
-                                    + e.getMessage());
+                        JobResult error = new JobResult();
+
+                        error.setJobId(task.getJobId());
+                        error.setTaskId(task.getTaskId());
+                        error.setSuccess(false);
+                        error.setErrorMessage(
+                                        "Execution error: " + e.getMessage());
+
+                        return error;
                 }
-            }
-        }
-    }
-
-    private boolean isBetterCandidate(
-            ElectionCandidate first,
-            ElectionCandidate second) {
-
-        if (first.jac < second.jac) {
-            return true;
         }
 
-        if (first.jac == second.jac
-                && first.workerId > second.workerId) {
+        public void startElection() {
 
-            return true;
+                int newTerm = currentTerm.incrementAndGet();
+
+                System.out.println();
+                System.out.println(
+                                "====================================");
+
+                System.out.println(
+                                "Worker " + workerId +
+                                                " starting ELECTION.");
+
+                System.out.println(
+                                "Term: " + newTerm);
+
+                System.out.println(
+                                "Worker JAC: " + jac.get());
+
+                System.out.println(
+                                "====================================");
+
+                electionManager.resetElectionState();
+
+                ElectionMessage message = electionManager.initiateElection(
+                                workerId,
+                                jac.get(),
+                                newTerm);
+
+                electionManager.isDuplicateAndMark(
+                                message.getMessageId());
+
+                electionParents.put(
+                                message.getMessageId(),
+                                -1);
+
+                ElectionCandidate localCandidate = new ElectionCandidate(
+                                workerId,
+                                jac.get());
+
+                bestCandidates.put(
+                                message.getMessageId(),
+                                localCandidate);
+
+                Set<Integer> children = ConcurrentHashMap.newKeySet();
+
+                pendingReplies.put(
+                                message.getMessageId(),
+                                children);
+
+                for (Map.Entry<Integer, WorkerService> entry : neighbours.entrySet()) {
+
+                        children.add(entry.getKey());
+
+                        sendElection(
+                                        entry.getValue(),
+                                        message);
+                }
+
+                checkElectionFinished(message);
         }
 
-        return false;
-    }
+        @Override
+        public void receiveElectionMessage(
+                        ElectionMessage message)
+                        throws RemoteException {
 
-    private void announceCoordinator(
-            int coordinator,
-            int coordinatorJac,
-            int term) {
+                if (message == null) {
+                        return;
+                }
 
-        ElectionMessage message =
-                electionManager.createCoordinatorAnnouncement(
-                        coordinator,
-                        coordinatorJac,
-                        term);
+                if (message.getMessageId() == null
+                                || message.getMessageId().isBlank()) {
 
-        electionManager.isDuplicateAndMark(
-                message.getMessageId());
+                        System.out.println(
+                                        "Worker " + workerId +
+                                                        " rejected election message with no ID.");
 
-        receiveCoordinatorMessage(message);
+                        return;
+                }
 
-        for (Map.Entry<Integer, WorkerService> entry
-                : neighbours.entrySet()) {
+                if (electionManager.isDuplicateAndMark(message.getMessageId())) {
+                        System.out.println(
+                                        "Worker " + workerId +
+                                                        " ignored duplicate " +
+                                                        message.getType() +
+                                                        " message " +
+                                                        message.getMessageId());
 
-            sendCoordinator(
-                    entry.getValue(),
-                    message);
-        }
-    }
+                        if (message.getType() == ElectionMessage.MessageType.ELECTION) {
+                                replyToCrossEdge(message);
+                        }
 
-    private void receiveCoordinatorMessage(
-            ElectionMessage message) {
+                        return;
+                }
 
-        coordinatorId =
-                message.getCandidateId();
+                if (message.getType() == ElectionMessage.MessageType.COORDINATOR) {
 
-        isCoordinator =
-                (workerId == coordinatorId);
+                        receiveCoordinatorMessage(message);
+                        return;
+                }
 
-        System.out.println(
-                "Worker " + workerId +
-                " now recognizes Worker " +
-                coordinatorId +
-                " as coordinator.");
+                System.out.println(
+                                "Worker " + workerId +
+                                                " received ELECTION " +
+                                                message.getMessageId());
 
-        if (isCoordinator) {
+                int parentId = message.getSenderId();
 
-            System.out.println(
-                    "Worker " + workerId +
-                    " has become the COORDINATOR.");
+                electionParents.put(
+                                message.getMessageId(),
+                                parentId);
 
-            transitionToCoordinator();
+                ElectionMessage updated = electionManager.processElectionMessage(
+                                message,
+                                workerId,
+                                jac.get());
 
-        } else {
+                bestCandidates.put(
+                                message.getMessageId(),
+                                new ElectionCandidate(
+                                                updated.getCandidateId(),
+                                                updated.getCandidateJac()));
 
-            if (coordinatorManager != null) {
+                Set<Integer> children = ConcurrentHashMap.newKeySet();
 
-                stepDownToWorker();
-            }
-        }
+                for (Integer neighbourId : neighbours.keySet()) {
 
-        for (Map.Entry<Integer, WorkerService> entry
-                : neighbours.entrySet()) {
+                        if (neighbourId != parentId) {
 
-            if (entry.getKey()
-                    == message.getSenderId()) {
+                                children.add(neighbourId);
+                        }
+                }
 
-                continue;
-            }
+                System.out.println(
+                                "Worker " + workerId +
+                                                " forwarding ELECTION " +
+                                                message.getMessageId() +
+                                                " to " +
+                                                children.size() +
+                                                " neighbour(s).");
 
-            sendCoordinator(
-                    entry.getValue(),
-                    message);
-        }
-    }
+                pendingReplies.put(
+                                message.getMessageId(),
+                                children);
 
-    private void sendCoordinator(
-            WorkerService worker,
-            ElectionMessage message) {
+                for (Integer neighbourId : children) {
 
-        ElectionMessage forwarded =
-                new ElectionMessage(
-                        message.getMessageId(),
-                        ElectionMessage.MessageType.COORDINATOR,
-                        message.getCandidateId(),
-                        message.getCandidateJac(),
-                        message.getTerm(),
-                        workerId);
+                        WorkerService neighbour = neighbours.get(neighbourId);
 
-        try {
+                        if (neighbour != null) {
 
-            worker.receiveElectionMessage(
-                    forwarded);
+                                sendElection(
+                                                neighbour,
+                                                updated);
+                        }
+                }
 
-        } catch (Exception e) {
-
-            System.out.println(
-                    "Could not propagate COORDINATOR: "
-                            + e.getMessage());
-        }
-    }
-
-    private volatile String bootstrapHost = "localhost";
-    private volatile int bootstrapPort = 1099;
-
-    public void connectToBootstrap(
-            String bootstrapHost,
-            int bootstrapPort) {
-
-        this.bootstrapHost = bootstrapHost;
-        this.bootstrapPort = bootstrapPort;
-
-        try {
-
-            BootstrapService bootstrap =
-                    (BootstrapService) Naming.lookup(
-                            "rmi://" +
-                            bootstrapHost +
-                            ":" +
-                            bootstrapPort +
-                            "/BootstrapService");
-
-            bootstrap.registerWorker(
-                    workerId,
-                    host,
-                    port);
-
-            List<String> endpoints =
-                    bootstrap.getInitialNeighbors(
-                            workerId);
-
-            for (String endpoint : endpoints) {
-
-                addNeighbourFromEndpoint(endpoint);
-            }
-
-            System.out.println(
-                    "Worker " + workerId +
-                    " connected to Bootstrap.");
-
-            System.out.println(
-                    "Neighbours: " +
-                    neighbours.keySet());
-
-        } catch (Exception e) {
-
-            System.err.println(
-                    "Bootstrap connection failed: " +
-                    e.getMessage());
-        }
-    }
-
-    @Override
-    public void addNeighbour(int neighbourId, WorkerService neighbour)
-            throws RemoteException {
-
-        if (neighbourId <= 0) {
-            throw new RemoteException("Neighbour ID must be greater than 0: " + neighbourId);
-        }
-        if (neighbourId == workerId) {
-            throw new RemoteException("A worker cannot add itself as a neighbour");
-        }
-        if (neighbour == null) {
-            throw new RemoteException("Neighbour reference cannot be null");
+                checkElectionFinished(updated);
         }
 
-        neighbours.putIfAbsent(neighbourId, neighbour);
-    }
+        private void sendElection(
+                        WorkerService worker,
+                        ElectionMessage message) {
 
-    private void addNeighbourFromEndpoint(
-            String endpoint) {
+                ElectionMessage forwarded = new ElectionMessage(
+                                message.getMessageId(),
+                                message.getType(),
+                                message.getCandidateId(),
+                                message.getCandidateJac(),
+                                message.getTerm(),
+                                workerId);
 
-        try {
+                try {
 
-            if (endpoint == null) {
-                throw new RemoteException("Neighbour descriptor cannot be null");
-            }
+                        worker.receiveElectionMessage(
+                                        forwarded);
 
-            String[] parts =
-                    endpoint.split("\\|", -1);
+                } catch (Exception e) {
 
-            if (parts.length != 3) {
-                throw new RemoteException("Expected neighbour descriptor workerId|host|port");
-            }
-
-            int id =
-                    Integer.parseInt(parts[0]);
-
-            if (id <= 0 || id == workerId) {
-                throw new RemoteException("Invalid discovered neighbour ID: " + id);
-            }
-
-            String workerHost =
-                    parts[1];
-
-            if (workerHost.isBlank()) {
-                throw new RemoteException("Neighbour host cannot be blank");
-            }
-
-            int workerPort =
-                    Integer.parseInt(parts[2]);
-
-            if (workerPort <= 0 || workerPort > 65535) {
-                throw new RemoteException("Invalid neighbour port: " + workerPort);
-            }
-
-            Registry registry =
-                    LocateRegistry.getRegistry(
-                            workerHost,
-                            workerPort);
-
-            WorkerService worker =
-                    (WorkerService) registry.lookup(
-                            "Worker-" + id);
-
-            worker.addNeighbour(workerId, this);
-
-            addNeighbour(
-                    id,
-                    worker);
-
-            System.out.println(
-                    "Worker " + workerId +
-                    " established bidirectional connection with Worker " +
-                    id);
-
-        } catch (Exception e) {
-
-            System.err.println(
-                    "Bidirectional neighbour setup failed for " +
-                    endpoint + ": " +
-                    e.getMessage());
-        }
-    }
-
-    public synchronized void transitionToCoordinator() {
-
-        if (coordinatorManager != null) {
-            return;
+                        System.out.println(
+                                        "Worker " + workerId +
+                                                        " could not forward ELECTION: " +
+                                                        e.getMessage());
+                }
         }
 
-        try {
+        @Override
+        public void receiveElectionReply(
+                        ElectionReply reply)
+                        throws RemoteException {
 
-            isCoordinator = true;
+                if (reply == null) {
+                        return;
+                }
 
-            coordinatorManager =
-                    new CoordinatorManager(
-                            jac.get());
+                String electionId = reply.getMessageId();
 
-            coordinatorManager.setTermExpiredListener(
-                    this::stepDownToWorker);
+                ElectionCandidate current = bestCandidates.get(electionId);
 
-            // Add coordinator itself as a worker so it can participate in computation
-            coordinatorManager.addWorker(this);
+                ElectionCandidate received = new ElectionCandidate(
+                                reply.getCandidateId(),
+                                reply.getCandidateJac());
 
-            // Populate all reachable workers across the cluster
-            for (WorkerService worker : discoverClusterWorkers()) {
-                coordinatorManager.addWorker(worker);
-            }
+                if (current == null ||
+                                isBetterCandidate(
+                                                received,
+                                                current)) {
 
-            // Register / rebind CoordinatorService in both the Bootstrap registry and local worker registry
-            try {
-                Registry bootstrapRegistry = LocateRegistry.getRegistry(bootstrapHost, bootstrapPort);
-                bootstrapRegistry.rebind("CoordinatorService", coordinatorManager);
-                System.out.println("Worker " + workerId + " bound CoordinatorService to Bootstrap registry (" + bootstrapHost + ":" + bootstrapPort + ").");
-            } catch (Exception e) {
-                System.err.println("Could not bind CoordinatorService to Bootstrap registry: " + e.getMessage());
-            }
+                        bestCandidates.put(
+                                        electionId,
+                                        received);
+                }
 
-            try {
-                Registry localRegistry = LocateRegistry.getRegistry(host, port);
-                localRegistry.rebind("CoordinatorService", coordinatorManager);
-            } catch (Exception ignored) {
-            }
+                Set<Integer> pending = pendingReplies.get(electionId);
 
-            System.out.println(
-                    "Worker " + workerId +
-                    " is now coordinator.");
+                if (pending != null) {
 
-        } catch (RemoteException e) {
+                        pending.remove(
+                                        reply.getSenderId());
+                }
 
-            System.err.println(
-                    "Failed to become coordinator: " +
-                    e.getMessage());
+                ElectionMessage message = new ElectionMessage(
+                                electionId,
+                                ElectionMessage.MessageType.ELECTION,
+                                bestCandidates.get(electionId).workerId,
+                                bestCandidates.get(electionId).jac,
+                                reply.getTerm(),
+                                workerId);
+
+                checkElectionFinished(message);
         }
-    }
 
-    /**
-     * Discovers all reachable worker nodes across the cluster.
-     * Starts with direct neighbours, and scans common worker ports on known hosts
-     * or the Bootstrap registry to locate any active Worker-<id> instances.
-     *
-     * @return collection of remote WorkerService stubs across the cluster (excluding self)
-     */
-    private java.util.Collection<WorkerService> discoverClusterWorkers() {
-        Map<Integer, WorkerService> clusterWorkers = new ConcurrentHashMap<>(neighbours);
+        private void checkElectionFinished(
+                        ElectionMessage message) {
+                Set<Integer> pending = pendingReplies.get(
+                                message.getMessageId());
 
-        // Scan ports around the current worker's port range (e.g. 1101-1110) on localhost/host
-        // to discover any active workers that may be several hops away in an unstructured network.
-        int basePort = 1101;
-        int maxWorkersToScan = 10;
-        for (int i = 0; i < maxWorkersToScan; i++) {
-            int targetPort = basePort + i;
-            if (targetPort == port) {
-                continue; // Skip self
-            }
+                if (pending != null &&
+                                !pending.isEmpty()) {
 
-            try {
-                Registry workerRegistry = LocateRegistry.getRegistry(host, targetPort);
-                String[] boundNames = workerRegistry.list();
-                for (String boundName : boundNames) {
-                    if (boundName.startsWith("Worker-")) {
+                        return;
+                }
+
+                ElectionCandidate best = bestCandidates.get(
+                                message.getMessageId());
+
+                if (best == null) {
+                        return;
+                }
+
+                Integer parent = electionParents.get(
+                                message.getMessageId());
+
+                if (parent == null || parent == -1) {
+
+                        System.out.println();
+                        System.out.println(
+                                        "Election completed.");
+
+                        System.out.println(
+                                        "Lowest JAC: " +
+                                                        best.jac);
+
+                        System.out.println(
+                                        "Selected coordinator: Worker " +
+                                                        best.workerId);
+
+                        announceCoordinator(
+                                        best.workerId,
+                                        best.jac,
+                                        message.getTerm());
+
+                } else {
+
+                        WorkerService parentWorker = neighbours.get(parent);
+
+                        if (parentWorker != null) {
+
+                                try {
+
+                                        ElectionReply reply = new ElectionReply(
+                                                        message.getMessageId(),
+                                                        message.getTerm(),
+                                                        workerId,
+                                                        best.workerId,
+                                                        best.jac);
+
+                                        parentWorker.receiveElectionReply(
+                                                        reply);
+
+                                } catch (Exception e) {
+
+                                        System.out.println(
+                                                        "Could not return election result: "
+                                                                        + e.getMessage());
+                                }
+                        }
+                }
+        }
+
+        private boolean isBetterCandidate(
+                        ElectionCandidate first,
+                        ElectionCandidate second) {
+
+                if (first.jac < second.jac) {
+                        return true;
+                }
+
+                if (first.jac == second.jac
+                                && first.workerId > second.workerId) {
+
+                        return true;
+                }
+
+                return false;
+        }
+
+        private void announceCoordinator(
+                        int coordinator,
+                        int coordinatorJac,
+                        int term) {
+
+                ElectionMessage message = electionManager.createCoordinatorAnnouncement(
+                                coordinator,
+                                coordinatorJac,
+                                term);
+
+                electionManager.isDuplicateAndMark(
+                                message.getMessageId());
+
+                receiveCoordinatorMessage(message);
+
+                for (Map.Entry<Integer, WorkerService> entry : neighbours.entrySet()) {
+
+                        sendCoordinator(
+                                        entry.getValue(),
+                                        message);
+                }
+        }
+
+        private void receiveCoordinatorMessage(
+                        ElectionMessage message) {
+
+                coordinatorId = message.getCandidateId();
+
+                isCoordinator = (workerId == coordinatorId);
+
+                System.out.println(
+                                "Worker " + workerId +
+                                                " now recognizes Worker " +
+                                                coordinatorId +
+                                                " as coordinator.");
+
+                if (isCoordinator) {
+
+                        System.out.println(
+                                        "Worker " + workerId +
+                                                        " has become the COORDINATOR.");
+
+                        transitionToCoordinator();
+
+                } else {
+
+                        if (coordinatorManager != null) {
+
+                                stepDownToWorker();
+                        }
+                }
+
+                for (Map.Entry<Integer, WorkerService> entry : neighbours.entrySet()) {
+
+                        if (entry.getKey() == message.getSenderId()) {
+
+                                continue;
+                        }
+
+                        sendCoordinator(
+                                        entry.getValue(),
+                                        message);
+                }
+        }
+
+        private void sendCoordinator(
+                        WorkerService worker,
+                        ElectionMessage message) {
+
+                ElectionMessage forwarded = new ElectionMessage(
+                                message.getMessageId(),
+                                ElectionMessage.MessageType.COORDINATOR,
+                                message.getCandidateId(),
+                                message.getCandidateJac(),
+                                message.getTerm(),
+                                workerId);
+
+                try {
+
+                        worker.receiveElectionMessage(
+                                        forwarded);
+
+                } catch (Exception e) {
+
+                        System.out.println(
+                                        "Could not propagate COORDINATOR: "
+                                                        + e.getMessage());
+                }
+        }
+
+        private volatile String bootstrapHost = "localhost";
+        private volatile int bootstrapPort = 1099;
+
+        public void connectToBootstrap(
+                        String bootstrapHost,
+                        int bootstrapPort) {
+
+                this.bootstrapHost = bootstrapHost;
+                this.bootstrapPort = bootstrapPort;
+
+                try {
+
+                        BootstrapService bootstrap = (BootstrapService) Naming.lookup(
+                                        "rmi://" +
+                                                        bootstrapHost +
+                                                        ":" +
+                                                        bootstrapPort +
+                                                        "/BootstrapService");
+
+                        bootstrap.registerWorker(
+                                        workerId,
+                                        host,
+                                        port);
+
+                        List<String> endpoints = bootstrap.getInitialNeighbors(
+                                        workerId);
+
+                        for (String endpoint : endpoints) {
+
+                                addNeighbourFromEndpoint(endpoint);
+                        }
+
+                        System.out.println(
+                                        "Worker " + workerId +
+                                                        " connected to Bootstrap.");
+
+                        System.out.println(
+                                        "Neighbours: " +
+                                                        neighbours.keySet());
+
+                } catch (Exception e) {
+
+                        System.err.println(
+                                        "Bootstrap connection failed: " +
+                                                        e.getMessage());
+                }
+        }
+
+        @Override
+        public void addNeighbour(int neighbourId, WorkerService neighbour)
+                        throws RemoteException {
+
+                if (neighbourId <= 0) {
+                        throw new RemoteException("Neighbour ID must be greater than 0: " + neighbourId);
+                }
+                if (neighbourId == workerId) {
+                        throw new RemoteException("A worker cannot add itself as a neighbour");
+                }
+                if (neighbour == null) {
+                        throw new RemoteException("Neighbour reference cannot be null");
+                }
+
+                neighbours.putIfAbsent(neighbourId, neighbour);
+        }
+
+        private void addNeighbourFromEndpoint(
+                        String endpoint) {
+
+                try {
+
+                        if (endpoint == null) {
+                                throw new RemoteException("Neighbour descriptor cannot be null");
+                        }
+
+                        String[] parts = endpoint.split("\\|", -1);
+
+                        if (parts.length != 3) {
+                                throw new RemoteException("Expected neighbour descriptor workerId|host|port");
+                        }
+
+                        int id = Integer.parseInt(parts[0]);
+
+                        if (id <= 0 || id == workerId) {
+                                throw new RemoteException("Invalid discovered neighbour ID: " + id);
+                        }
+
+                        String workerHost = parts[1];
+
+                        if (workerHost.isBlank()) {
+                                throw new RemoteException("Neighbour host cannot be blank");
+                        }
+
+                        int workerPort = Integer.parseInt(parts[2]);
+
+                        if (workerPort <= 0 || workerPort > 65535) {
+                                throw new RemoteException("Invalid neighbour port: " + workerPort);
+                        }
+
+                        Registry registry = LocateRegistry.getRegistry(
+                                        workerHost,
+                                        workerPort);
+
+                        WorkerService worker = (WorkerService) registry.lookup(
+                                        "Worker-" + id);
+
+                        worker.addNeighbour(workerId, this);
+
+                        addNeighbour(
+                                        id,
+                                        worker);
+
+                        System.out.println(
+                                        "Worker " + workerId +
+                                                        " established bidirectional connection with Worker " +
+                                                        id);
+
+                } catch (Exception e) {
+
+                        System.err.println(
+                                        "Bidirectional neighbour setup failed for " +
+                                                        endpoint + ": " +
+                                                        e.getMessage());
+                }
+        }
+
+        public synchronized void transitionToCoordinator() {
+
+                if (coordinatorManager != null) {
+                        return;
+                }
+
+                try {
+
+                        isCoordinator = true;
+
+                        coordinatorManager = new CoordinatorManager(
+                                        jac.get());
+
+                        coordinatorManager.setTermExpiredListener(
+                                        this::stepDownToWorker);
+
+                        for (WorkerService worker : neighbours.values()) {
+
+                                coordinatorManager.addWorker(
+                                                worker);
+                        }
+
+                        // Register / rebind CoordinatorService in both the Bootstrap registry and local
+                        // worker registry
                         try {
-                            int targetWorkerId = Integer.parseInt(boundName.substring("Worker-".length()));
-                            if (targetWorkerId != workerId && !clusterWorkers.containsKey(targetWorkerId)) {
-                                WorkerService stub = (WorkerService) workerRegistry.lookup(boundName);
-                                clusterWorkers.put(targetWorkerId, stub);
-                                System.out.println("Coordinator Worker " + workerId + " discovered cluster worker: " + boundName + " on port " + targetPort);
-                            }
+                                Registry bootstrapRegistry = LocateRegistry.getRegistry(bootstrapHost, bootstrapPort);
+                                bootstrapRegistry.rebind("CoordinatorService", coordinatorManager);
+                                System.out.println("Worker " + workerId
+                                                + " bound CoordinatorService to Bootstrap registry (" + bootstrapHost
+                                                + ":" + bootstrapPort + ").");
+                        } catch (Exception e) {
+                                System.err.println("Could not bind CoordinatorService to Bootstrap registry: "
+                                                + e.getMessage());
+                        }
+
+                        try {
+                                Registry localRegistry = LocateRegistry.getRegistry(host, port);
+                                localRegistry.rebind("CoordinatorService", coordinatorManager);
                         } catch (Exception ignored) {
                         }
-                    }
+
+                        System.out.println(
+                                        "Worker " + workerId +
+                                                        " is now coordinator.");
+
+                } catch (RemoteException e) {
+
+                        System.err.println(
+                                        "Failed to become coordinator: " +
+                                                        e.getMessage());
                 }
-            } catch (Exception ignored) {
-                // Port not open or no registry on this port - normal during partial cluster setups
-            }
         }
 
-        return clusterWorkers.values();
-    }
+        public synchronized void stepDownToWorker() {
 
-    public synchronized void stepDownToWorker() {
+                // Unbind CoordinatorService from registries upon stepping down
+                try {
+                        Registry bootstrapRegistry = LocateRegistry.getRegistry(bootstrapHost, bootstrapPort);
+                        bootstrapRegistry.unbind("CoordinatorService");
+                        System.out.println(
+                                        "Worker " + workerId + " unbound CoordinatorService from Bootstrap registry.");
+                } catch (Exception ignored) {
+                }
 
-        // Unbind CoordinatorService from registries upon stepping down
-        try {
-            Registry bootstrapRegistry = LocateRegistry.getRegistry(bootstrapHost, bootstrapPort);
-            bootstrapRegistry.unbind("CoordinatorService");
-            System.out.println("Worker " + workerId + " unbound CoordinatorService from Bootstrap registry.");
-        } catch (Exception ignored) {
+                try {
+                        Registry localRegistry = LocateRegistry.getRegistry(host, port);
+                        localRegistry.unbind("CoordinatorService");
+                } catch (Exception ignored) {
+                }
+
+                if (coordinatorManager != null) {
+
+                        jac.set(
+                                        coordinatorManager
+                                                        .getPersistentJac());
+
+                        coordinatorManager = null;
+                }
+
+                isCoordinator = false;
+
+                System.out.println(
+                                "Worker " + workerId +
+                                                " stepped down from coordinator.");
+
+                startElection();
         }
 
-        try {
-            Registry localRegistry = LocateRegistry.getRegistry(host, port);
-            localRegistry.unbind("CoordinatorService");
-        } catch (Exception ignored) {
+        @Override
+        public boolean ping() {
+                return true;
         }
 
-        if (coordinatorManager != null) {
-
-            jac.set(
-                    coordinatorManager
-                            .getPersistentJac());
-
-            coordinatorManager = null;
+        public int getWorkerId() {
+                return workerId;
         }
 
-        isCoordinator = false;
-
-        System.out.println(
-                "Worker " + workerId +
-                " stepped down from coordinator.");
-
-        startElection();
-    }
-
-    @Override
-    public boolean ping() {
-        return true;
-    }
-
-    public String getLeaderman() {
-        return leaderman;
-    }
-
-    public int getWorkerId() {
-        return workerId;
-    }
-
-    public int getJac() {
-        return jac.get();
-    }
-
-    public boolean isCoordinator() {
-        return isCoordinator;
-    }
-
-    public int getCoordinatorId() {
-        return coordinatorId;
-    }
-
-    public int getCurrentTerm() {
-        return currentTerm.get();
-    }
-
-    private static class ElectionCandidate {
-
-        private final int workerId;
-        private final int jac;
-
-        ElectionCandidate(
-                int workerId,
-                int jac) {
-
-            this.workerId = workerId;
-            this.jac = jac;
+        public int getJac() {
+                return jac.get();
         }
-    }
+
+        public boolean isCoordinator() {
+                return isCoordinator;
+        }
+
+        public int getCoordinatorId() {
+                return coordinatorId;
+        }
+
+        public int getCurrentTerm() {
+                return currentTerm.get();
+        }
+
+        private static class ElectionCandidate {
+
+                private final int workerId;
+                private final int jac;
+
+                ElectionCandidate(
+                                int workerId,
+                                int jac) {
+
+                        this.workerId = workerId;
+                        this.jac = jac;
+                }
+        }
 }
