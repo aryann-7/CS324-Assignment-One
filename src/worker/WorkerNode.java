@@ -76,6 +76,38 @@ public class WorkerNode extends UnicastRemoteObject
         this.port = port;
     }
 
+    /**
+         * A duplicate ELECTION arriving here means this edge is a cycle in
+         * the neighbour graph, not part of the spanning tree this flood
+         * already built through some other path. The sender is still
+         * waiting on a reply for this specific edge — without one, it waits
+         * forever, since a normal duplicate is otherwise silently dropped.
+         * Reply immediately with whatever candidate we currently know;
+         * there's nothing further to wait on for a non-tree edge.
+         */
+        private void replyToCrossEdge(ElectionMessage message) {
+                int senderId = message.getSenderId();
+                        WorkerService sender = neighbours.get(senderId);
+                        if (sender == null) {
+                                return;
+                }
+
+                ElectionCandidate known = bestCandidates.get(message.getMessageId());
+                int candidateId = (known != null) ? known.workerId : message.getCandidateId();
+                int candidateJac = (known != null) ? known.jac : message.getCandidateJac();
+
+                try {
+                        sender.receiveElectionReply(new ElectionReply(
+                                message.getMessageId(),
+                                message.getTerm(),
+                                workerId,
+                                candidateId,
+                                candidateJac));
+                } catch (Exception e) {
+                        System.out.println("Worker " + workerId + " could not reply to cross-edge: " + e.getMessage());
+                }
+        }
+
     @Override
     public JobResult executeJob(JobTask task)
             throws RemoteException {
@@ -212,17 +244,19 @@ public class WorkerNode extends UnicastRemoteObject
             return;
         }
 
-        if (electionManager.isDuplicateAndMark(
-                message.getMessageId())) {
+        if (electionManager.isDuplicateAndMark(message.getMessageId())) {
+                System.out.println(
+                        "Worker " + workerId +
+                        " ignored duplicate " +
+                        message.getType() +
+                        " message " +
+                        message.getMessageId());
 
-            System.out.println(
-                    "Worker " + workerId +
-                    " ignored duplicate " +
-                    message.getType() +
-                    " message " +
-                    message.getMessageId());
+                if (message.getType() == ElectionMessage.MessageType.ELECTION) {
+                        replyToCrossEdge(message);
+                }
 
-            return;
+                return;
         }
 
         if (message.getType()
