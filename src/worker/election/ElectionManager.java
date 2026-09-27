@@ -91,7 +91,7 @@ public class ElectionManager {
                 candidate.getCandidateId())) {
 
             candidate = new ElectionMessage(
-                    UUID.randomUUID().toString(),
+                    message.getMessageId(),
                     ElectionMessage.MessageType.ELECTION,
                     localId,
                     localJac,
