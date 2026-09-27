@@ -16,106 +16,92 @@ import java.rmi.registry.Registry;
  */
 public class WorkerMain {
 
-    public static void main(String[] args) {
+        public static void main(String[] args) {
 
-        if (args.length < 5) {
+                if (args.length < 5) {
 
-            System.out.println(
-                    "Usage:");
-            System.out.println(
-                    "WorkerMain <workerId> <host> "
-                    + "<workerPort> <bootstrapHost> "
-                    + "<bootstrapPort>");
+                        System.out.println(
+                                        "Usage:");
+                        System.out.println(
+                                        "WorkerMain <workerId> <host> "
+                                                        + "<workerPort> <bootstrapHost> "
+                                                        + "<bootstrapPort>");
 
-            return;
+                        return;
+                }
+
+                try {
+
+                        int workerId = Integer.parseInt(args[0]);
+
+                        String host = args[1];
+
+                        int workerPort = Integer.parseInt(args[2]);
+
+                        String bootstrapHost = args[3];
+
+                        int bootstrapPort = Integer.parseInt(args[4]);
+
+                        /*
+                         * Create an RMI registry for this worker.
+                         */
+                        Registry registry = LocateRegistry.createRegistry(
+                                        workerPort);
+
+                        /*
+                         * Create worker.
+                         */
+                        WorkerNode worker = new WorkerNode(
+                                        workerId,
+                                        host,
+                                        workerPort);
+
+                        /*
+                         * Bind worker to its registry.
+                         */
+                        registry.rebind(
+                                        "Worker-" + workerId,
+                                        worker);
+
+                        System.out.println(
+                                        "================================");
+
+                        System.out.println(
+                                        "Worker " + workerId +
+                                                        " started.");
+
+                        System.out.println(
+                                        "Port: " + workerPort);
+
+                        System.out.println(
+                                        "JAC: " + worker.getJac());
+
+                        System.out.println(
+                                        "================================");
+
+                        // Register with Bootstrap.
+                        worker.connectToBootstrap(
+                                        bootstrapHost,
+                                        bootstrapPort);
+
+                        /*
+                         * Start election after a short delay to allow other workers to join.
+                         */
+                        Thread.sleep(3000); // Wait 3 seconds for other workers
+                        System.out.println("Worker 1 initiating election...");
+                        worker.startElection();
+
+                        /*
+                         * Keep the process alive.
+                         */
+                        synchronized (worker) {
+
+                                worker.wait();
+                        }
+
+                } catch (Exception e) {
+
+                        e.printStackTrace();
+                }
         }
-
-        try {
-
-            int workerId =
-                    Integer.parseInt(args[0]);
-
-            String host =
-                    args[1];
-
-            int workerPort =
-                    Integer.parseInt(args[2]);
-
-            String bootstrapHost =
-                    args[3];
-
-            int bootstrapPort =
-                    Integer.parseInt(args[4]);
-
-            /*
-             * Create an RMI registry for this worker.
-             */
-            Registry registry =
-                    LocateRegistry.createRegistry(
-                            workerPort);
-
-            /*
-             * Create worker.
-             */
-            WorkerNode worker =
-                    new WorkerNode(
-                            workerId,
-                            host,
-                            workerPort);
-
-            /*
-             * Bind worker to its registry.
-             */
-            registry.rebind(
-                    "Worker-" + workerId,
-                    worker);
-
-            System.out.println(
-                    "================================");
-
-            System.out.println(
-                    "Worker " + workerId +
-                    " started.");
-
-            System.out.println(
-                    "Port: " + workerPort);
-
-            System.out.println(
-                    "JAC: " + worker.getJac());
-
-            System.out.println(
-                    "leaderman: " +
-                    worker.getLeaderman());
-
-            System.out.println(
-                    "================================");
-
-            /*
-             * Register with Bootstrap.
-             */
-            worker.connectToBootstrap(
-                    bootstrapHost,
-                    bootstrapPort);
-
-            /*
-             * Start election after a short delay to allow other workers to join.
-             */
-            Thread.sleep(3000); // Wait 3 seconds for other workers
-            System.out.println("Worker 1 initiating election...");
-            worker.startElection();
-            
-
-            /*
-             * Keep the process alive.
-             */
-            synchronized (worker) {
-
-                worker.wait();
-            }
-
-        } catch (Exception e) {
-
-            e.printStackTrace();
-        }
-    }
 }
