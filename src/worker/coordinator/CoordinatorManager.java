@@ -16,6 +16,9 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
 
     private final AtomicInteger termJobCount = new AtomicInteger(0);
 
+    private final java.util.concurrent.atomic.AtomicBoolean expiryNotified =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+
     private final AtomicInteger persistentJac;
 
     private final AtomicInteger currentTerm = new AtomicInteger(1);
@@ -32,7 +35,7 @@ public class CoordinatorManager extends UnicastRemoteObject implements Coordinat
     }
 
     private void notifyTermExpired() {
-        if (termExpiredListener != null) {
+        if (expiryNotified.compareAndSet(false, true) && termExpiredListener != null) {
             new Thread(termExpiredListener, "term-expiry-trigger").start();
         }
     }
