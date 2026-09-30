@@ -614,6 +614,9 @@ public class WorkerNode extends UnicastRemoteObject
                 }
 
                 neighbours.putIfAbsent(neighbourId, neighbour);
+                if (isCoordinator && coordinatorManager != null) {
+                        coordinatorManager.addWorker(neighbour);
+                }
         }
 
         private void addNeighbourFromEndpoint(

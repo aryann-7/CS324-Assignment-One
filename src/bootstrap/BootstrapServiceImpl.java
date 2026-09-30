@@ -10,42 +10,32 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * Bootstrap Node.
- *
- * The Bootstrap Node only helps workers join the network.
- * It does not participate in elections or computation.
- */
+//The Bootstrap Node only helps workers join the network.
+//It does not participate in elections or computation.
+
 public class BootstrapServiceImpl
         extends UnicastRemoteObject
         implements BootstrapService {
 
     private static final long serialVersionUID = 1L;
 
-    /**
-     * Worker ID -> endpoint ("workerId|host|port").
-     */
-    private final Map<Integer, String> registeredWorkers =
-            new ConcurrentHashMap<>();
-
+    // Worker ID -> endpoint ("workerId|host|port").
+    private final Map<Integer, String> registeredWorkers = new ConcurrentHashMap<>();
     private final int maxNeighborsPerWorker;
 
     public BootstrapServiceImpl()
             throws RemoteException {
 
-        this(Integer.getInteger("cs324.maxNeighbors", 2));
+        this(Integer.getInteger("maxNeighbors", 2));
     }
 
     public BootstrapServiceImpl(int maxNeighborsPerWorker)
             throws RemoteException {
-
         super();
         this.maxNeighborsPerWorker = Math.max(1, maxNeighborsPerWorker);
     }
 
-    /**
-     * Registers an active worker.
-     */
+    // Registers an active worker.
     @Override
     public void registerWorker(
             int workerId,
@@ -66,7 +56,6 @@ public class BootstrapServiceImpl
         }
 
         String endpoint = workerId + "|" + host + "|" + port;
-
         String existing = registeredWorkers.putIfAbsent(workerId, endpoint);
         if (existing != null) {
             throw new RemoteException("Worker ID " + workerId + " is already registered");
@@ -74,16 +63,14 @@ public class BootstrapServiceImpl
 
         System.out.println(
                 "Registered Worker " +
-                workerId +
-                " at " +
-                host +
-                ":" +
-                port);
+                        workerId +
+                        " at " +
+                        host +
+                        ":" +
+                        port);
     }
 
-    /**
-     * Gives a joining worker one random active neighbour.
-     */
+    // Gives a joining worker one random active neighbour.
     @Override
     public List<String> getInitialNeighbors(
             int workerId)
@@ -104,7 +91,8 @@ public class BootstrapServiceImpl
             return Collections.emptyList();
         }
 
-        // Select up to maxNeighborsPerWorker random distinct neighbors (min(maxNeighborsPerWorker, candidates.size()))
+        // Select up to maxNeighborsPerWorker random distinct neighbors
+        // (min(maxNeighborsPerWorker, candidates.size()))
         // to form a resilient connected mesh rather than a fragile single linear tree.
         Collections.shuffle(candidates, ThreadLocalRandom.current());
         int count = Math.min(maxNeighborsPerWorker, candidates.size());
@@ -112,15 +100,13 @@ public class BootstrapServiceImpl
 
         System.out.println(
                 "Worker " + workerId +
-                " assigned initial neighbours: " +
-                selected);
+                        " assigned initial neighbours: " +
+                        selected);
 
         return selected;
     }
 
-    /**
-     * Removes a worker from the active registry.
-     */
+    // Removes a worker from the active registry.
     @Override
     public void deregisterWorker(
             int workerId)
@@ -130,12 +116,12 @@ public class BootstrapServiceImpl
         if (removed != null) {
             System.out.println(
                     "Worker " + workerId +
-                    " deregistered from " +
-                    removed);
+                            " deregistered from " +
+                            removed);
         } else {
             System.out.println(
                     "Worker " + workerId +
-                    " is not registered");
+                            " is not registered");
         }
     }
 }

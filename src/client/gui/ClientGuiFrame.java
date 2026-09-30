@@ -67,7 +67,7 @@ public class ClientGuiFrame extends JFrame {
     }
 
     public ClientGuiFrame(String clientId) {
-        super("CS324 Cluster Client - #" + clientId);
+        super("Cluster Client - #" + clientId);
         this.clientId = clientId;
         initComponents();
     }
