@@ -7,8 +7,8 @@ REM =========================================================================
 REM Usage:
 REM   run_cluster.bat [num_workers] [num_clients]
 REM Examples:
-REM   run_cluster.bat         (defaults to 3 workers, 2 clients)
-REM   run_cluster.bat 5       (5 workers, 2 clients)
+REM   run_cluster.bat         (defaults to 3 workers, 1 client)
+REM   run_cluster.bat 5       (5 workers, 1 client)
 REM   run_cluster.bat 6 3     (6 workers, 3 clients)
 REM =========================================================================
 
@@ -16,7 +16,7 @@ set NUM_WORKERS=%1
 if "%NUM_WORKERS%"=="" set NUM_WORKERS=3
 
 set NUM_CLIENTS=%2
-if "%NUM_CLIENTS%"=="" set NUM_CLIENTS=2
+if "%NUM_CLIENTS%"=="" set NUM_CLIENTS=1
 
 REM Validate worker bounds (between 3 and 10 as per demo requirements)
 if %NUM_WORKERS% LSS 3 (
