@@ -5,7 +5,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
 // GUI launch point.
-
 public class ClientMain {
 
     public static void main(String[] args) {
@@ -15,7 +14,9 @@ public class ClientMain {
 
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) {
+        }
+
+        catch (Exception ignored) {
         }
 
         SwingUtilities.invokeLater(() -> {

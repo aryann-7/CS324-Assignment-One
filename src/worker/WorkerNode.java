@@ -40,6 +40,7 @@ public class WorkerNode extends UnicastRemoteObject
         private final Map<String, Integer> electionParents = new ConcurrentHashMap<>();
         private final Map<String, Set<Integer>> pendingReplies = new ConcurrentHashMap<>();
         private final Map<String, ElectionCandidate> bestCandidates = new ConcurrentHashMap<>();
+        private final Set<String> completedElections = ConcurrentHashMap.newKeySet();
 
         public WorkerNode(
                         int workerId,
@@ -216,13 +217,6 @@ public class WorkerNode extends UnicastRemoteObject
                 }
 
                 if (electionManager.isDuplicateAndMark(message.getMessageId())) {
-                        System.out.println(
-                                        "Worker " + workerId +
-                                                        " ignored duplicate " +
-                                                        message.getType() +
-                                                        " message " +
-                                                        message.getMessageId());
-
                         if (message.getType() == ElectionMessage.MessageType.ELECTION) {
                                 replyToCrossEdge(message);
                         }
@@ -399,6 +393,10 @@ public class WorkerNode extends UnicastRemoteObject
 
                 if (parent == null || parent == -1) {
 
+                        if (!completedElections.add(message.getMessageId())) {
+                                return;
+                        }
+
                         System.out.println();
                         System.out.println(
                                         "Election completed.");
@@ -475,41 +473,35 @@ public class WorkerNode extends UnicastRemoteObject
                                 message.getMessageId());
 
                 receiveCoordinatorMessage(message);
-
-                for (Map.Entry<Integer, WorkerService> entry : neighbours.entrySet()) {
-
-                        sendCoordinator(
-                                        entry.getValue(),
-                                        message);
-                }
         }
 
         private void receiveCoordinatorMessage(
                         ElectionMessage message) {
 
-                coordinatorId = message.getCandidateId();
+                int newCoordinatorId = message.getCandidateId();
+                boolean coordinatorChanged = (this.coordinatorId != newCoordinatorId);
 
-                isCoordinator = (workerId == coordinatorId);
+                this.coordinatorId = newCoordinatorId;
+                this.isCoordinator = (workerId == coordinatorId);
 
-                System.out.println(
-                                "Worker " + workerId +
-                                                " now recognizes Worker " +
-                                                coordinatorId +
-                                                " as coordinator.");
-
-                if (isCoordinator) {
-
+                if (coordinatorChanged) {
                         System.out.println(
                                         "Worker " + workerId +
-                                                        " has become the COORDINATOR.");
+                                                        " now recognizes Worker " +
+                                                        coordinatorId +
+                                                        " as coordinator.");
 
-                        transitionToCoordinator();
+                        if (isCoordinator) {
+                                System.out.println(
+                                                "Worker " + workerId +
+                                                                " has become the COORDINATOR.");
 
-                } else {
+                                transitionToCoordinator();
 
-                        if (coordinatorManager != null) {
-
-                                stepDownToWorker();
+                        } else {
+                                if (coordinatorManager != null) {
+                                        stepDownToWorker();
+                                }
                         }
                 }
 
@@ -614,6 +606,9 @@ public class WorkerNode extends UnicastRemoteObject
                 }
 
                 neighbours.putIfAbsent(neighbourId, neighbour);
+                if (isCoordinator && coordinatorManager != null) {
+                        coordinatorManager.addWorker(neighbour);
+                }
         }
 
         private void addNeighbourFromEndpoint(

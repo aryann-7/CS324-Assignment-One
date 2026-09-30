@@ -6,10 +6,9 @@ import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.ExportException;
 
-/**
- * Starts the Bootstrap Node.
- * Starts the RMI registry (if not already running) and binds BootstrapService.
- */
+//Starts the Bootstrap Node.
+//Starts the RMI registry (if not already running) and binds BootstrapService.
+
 public class BootstrapServer {
 
     public static final int DEFAULT_PORT = 1099;
