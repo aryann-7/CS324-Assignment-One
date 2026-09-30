@@ -16,17 +16,20 @@ A fully-functional distributed computing cluster implementation using Java RMI t
 
    java -cp bin bootstrap.BootstrapServer
 
+
 2. **Start Worker Nodes** (open 3 new terminals):
 
    java -cp bin worker.WorkerMain 101 localhost 1101 localhost 1099
    java -cp bin worker.WorkerMain 102 localhost 1102 localhost 1099
    java -cp bin worker.WorkerMain 103 localhost 1103 localhost 1099
 
+
 3. **Wait for Election** (look for "Worker X has become the COORDINATOR" message)
 
 4. **Start Client:**
 
    java -cp bin client.ClientMain 1
+
 
 Now you can submit jobs through the GUI
 
@@ -110,6 +113,9 @@ The Bootstrap Node must be started first as it maintains the registry of active 
 
 java -cp bin bootstrap.BootstrapServer
 
+java -cp bin bootstrap.BootstrapServer
+
+
 Expected output:
 
 ================================
@@ -137,6 +143,13 @@ java -cp bin worker.WorkerMain 101 localhost 1101 localhost 1099
 java -cp bin worker.WorkerMain 102 localhost 1102 localhost 1099
 
 # Start Worker 103 (in a new terminal)
+java -cp bin worker.WorkerMain 101 localhost 1101 localhost 1099
+
+# Start Worker 102 (in a new terminal)
+java -cp bin worker.WorkerMain 102 localhost 1102 localhost 1099
+
+# Start Worker 103 (in a new terminal)
+java -cp bin worker.WorkerMain 103 localhost 1103 localhost 1099
 
 java -cp bin worker.WorkerMain 103 localhost 1103 localhost 1099
 
@@ -173,6 +186,10 @@ Once a coordinator is elected, clients can connect and submit jobs.
 java -cp bin client.ClientMain 1
 
 # Start Client 2 (in a new terminal, for testing multiple concurrent clients)
+java -cp bin client.ClientMain 1
+
+# Start Client 2 (in a new terminal, for testing multiple concurrent clients)
+java -cp bin client.ClientMain 2
 
 java -cp bin client.ClientMain 2
 
@@ -254,6 +271,9 @@ java -cp bin bootstrap.BootstrapServer
 
 # Terminal 2-4: Workers
 
+java -cp bin bootstrap.BootstrapServer
+
+# Terminal 2-4: Workers
 java -cp bin worker.WorkerMain 101 localhost 1101 localhost 1099
 java -cp bin worker.WorkerMain 102 localhost 1102 localhost 1099
 java -cp bin worker.WorkerMain 103 localhost 1103 localhost 1099
